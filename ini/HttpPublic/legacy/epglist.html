@@ -44,6 +44,15 @@ if sid==0 then
   ct:Append('<div class="nav">\n<ul class="epg-list-list">\n')
   --3時間前までの番組
   pastEvents=edcb.EnumEventInfo(st,{startTime=os.date('!*t',now+(9-3)*3600),durationSecond=3*3600})
+  --並びがネットワーク種別でまとまっているときは見出しをつける
+  nwType={}
+  for i,v in ipairs(st) do
+    if (nwType[NetworkType(v.onid)] or i)~=i then
+      nwType=nil
+      break
+    end
+    nwType[NetworkType(v.onid)]=i+1
+  end
   for i,v in ipairs(st) do
     present=nil
     for j=BinarySearchBound(pastEvents,v,CompareFields('onid',false,'tsid',false,'sid')),#pastEvents do
@@ -60,6 +69,10 @@ if sid==0 then
           present=w
         end
       end
+    end
+    if nwType and nwType~=NetworkType(v.onid) then
+      nwType=NetworkType(v.onid)
+      ct:Append('<li><h2>'..nwType..'</h2></li>\n')
     end
     ct:Append('<li><a href="epglist.html?id='..v.onid..'-'..v.tsid..'-'..v.sid
       ..'#now"><img alt="" style="max-height:0.8em;width:auto" src="logo.lua?onid='..v.onid..'&amp;sid='..v.sid..'">'..v.service_name..'</a>'

@@ -459,7 +459,18 @@ const runOnscreenButtonsScript=()=>{
   bexit.className="exit-control";
   bexit.appendChild(btn);
   if(document.fullscreenEnabled||document.webkitFullscreenEnabled){
+    let showCursor=()=>{};
+    if(vid.c){
+      let t=0;
+      showCursor=()=>{
+        vfull.classList.remove("hide-cursor-on-fullscreen");
+        clearTimeout(t);
+        t=setTimeout(()=>{vfull.classList.add("hide-cursor-on-fullscreen");},3000);
+      };
+      vfull.onmousemove=showCursor;
+    }
     vfull[document.fullscreenEnabled?"onfullscreenchange":"onwebkitfullscreenchange"]=()=>{
+      showCursor();
       const vseek=document.getElementById("vid-seek");
       if(vseek){
         const vseekMarker=document.getElementById("vid-seek-marker");
@@ -774,7 +785,7 @@ const runVideoScript=(aribb24UseSvg,aribb24Option)=>{
   }
   const cbDatacast=document.getElementById("cb-datacast");
   if(cbDatacast){
-    if(cbDatacast.innerText=="data"){
+    if(cbDatacast.parentNode.textContent=="data"){
       let onDataStream=null;
       let onDataStreamError=null;
       let reopen=false;
