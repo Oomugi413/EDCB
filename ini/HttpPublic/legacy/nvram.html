@@ -42,6 +42,9 @@ ct:Append([=[
     ※設定はブラウザのローカルストレージに保存されます
   </p><p>
     <button type="button" id="nvram-del">保存領域を全消去</button>
+  </p><p>
+    <label><input type="checkbox" id="use-js-interpreter">旧実装のECMAScriptインタプリタを使う</label><br>
+    ※データ放送ブラウザの旧実装(JS-Interpreter)と新実装(<a rel="noreferrer" href="https://github.com/otya128/es2">es2</a>)を切り替えます
   </p>
   <div id="result"></div>
 </div>
@@ -121,6 +124,13 @@ document.getElementById("nvram-del").onclick=function(){
     localStorage.removeItem(keys[i]);
   }
   document.getElementById("result").innerText="消去しました";
+};
+var cb=document.getElementById("use-js-interpreter");
+cb.checked=!!localStorage.getItem("use_js_interpreter");
+cb.onclick=function(){
+  if(cb.checked)localStorage.setItem("use_js_interpreter","true");
+  else localStorage.removeItem("use_js_interpreter");
+  document.getElementById("result").innerText=(localStorage.getItem("use_js_interpreter")?"旧":"新")+"実装に設定しました";
 };
 </script>
 </body>
