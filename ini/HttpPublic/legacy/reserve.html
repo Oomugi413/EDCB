@@ -127,7 +127,8 @@ if #a>0 then
       if n==v then
         src='view.lua?n='..v..ConstructTranscodeQueries(xq)..'&amp;ctok='..CsrfToken('view.lua')
         ct:Append(VideoWrapperBegin()
-          ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')..'></canvas>' or
+          ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')
+                             ..(xq.deinterlace and ' data-deinterlace="'..xq.deinterlace..'"' or '')..'></canvas>' or
                '<video id="video" autoplay playsinline controls'
                  ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
                       ..' data-ctok="'..CsrfToken('view.lua')..'"'

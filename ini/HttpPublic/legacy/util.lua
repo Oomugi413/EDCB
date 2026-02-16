@@ -108,6 +108,7 @@ XCODE_FAST_RATES={
 --editorFast:単独で倍速再生にできないトランスコーダーの手前に置く編集コマンド。指定方法はxcoderと同様
 --editorOptionFastFunc:標準入出力ともにMPEG2-TSで倍速再生になるようにオプションを返す関数を指定する
 --autoCinema:TS-Live!方式専用。Cinema(逆テレシネ)モードを自動切り替え
+--deinterlace:TS-Live!方式専用。デインタレース方式。'none'か'yadif'か'bwdif'
 XCODE_OPTIONS={
   {
     --ffmpegの例。-b:vでおおよその最大ビットレートを決め、-qminで動きの少ないシーンのデータ量を節約する
@@ -246,6 +247,7 @@ XCODE_OPTIONS={
     name='TS-Live!',
     tslive=true,
     autoCinema=true,
+    deinterlace='bwdif',
     xcoder='',
     option='',
     filter=':',
@@ -391,6 +393,7 @@ function GetTranscodeQueries(qs)
     option=option,
     tslive=XCODE_OPTIONS[option or 1].tslive,
     autoCinema=XCODE_OPTIONS[option or 1].autoCinema,
+    deinterlace=(XCODE_OPTIONS[option or 1].deinterlace or ''):match('^[0-9A-Za-z]+$'),
     offset=GetVarInt(qs,'offset',0,100),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,

@@ -1799,6 +1799,9 @@ const runTsliveScript=()=>{
         }else{
           autoCinema=false;
         }
+        if(vid.e.dataset.deinterlace&&mod.setDeinterlace){
+          mod.setDeinterlace(vid.e.dataset.deinterlace);
+        }
         mod.setStatsCallback(stats=>{
           if(statsTime!=stats[stats.length-1].time){
             vid.currentTime+=stats[stats.length-1].time-statsTime;

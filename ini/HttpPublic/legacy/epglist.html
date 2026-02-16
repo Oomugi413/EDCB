@@ -205,7 +205,8 @@ else
   if vtag==1 then
     src='view.lua?n='..n..'&amp;id='..onid..'-'..tsid..'-'..sid..ConstructTranscodeQueries(xq)..'&amp;ctok='..CsrfToken('view.lua')
     ct:Append('\n'..VideoWrapperBegin()
-      ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')..'></canvas>' or
+      ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')
+                         ..(xq.deinterlace and ' data-deinterlace="'..xq.deinterlace..'"' or '')..'></canvas>' or
            '<video id="video" autoplay playsinline controls'
              ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
                   ..' data-ctok="'..CsrfToken('view.lua')..'"'
