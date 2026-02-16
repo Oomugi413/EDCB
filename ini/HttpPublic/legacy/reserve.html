@@ -127,14 +127,14 @@ if #a>0 then
       if n==v then
         src='view.lua?n='..v..ConstructTranscodeQueries(xq)..'&amp;ctok='..CsrfToken('view.lua')
         ct:Append(VideoWrapperBegin()
-          ..(xq.tslive and '<canvas id="video" data-src="'..src..'"></canvas>' or
-               '<video id="video" autoplay playsinline controls '..(ALLOW_HLS and 'data-' or '')..'src="'..src..'">view</video>')
-          ..VideoWrapperEnd(USE_LIVEJK and GetChatStreamNameList())..'\n'..TranscodeScriptTemplate(true,xq.caption,xq.jikkyo,{n=v}))
-        if xq.tslive then
-          ct:Append(TsliveScriptTemplate(xq.autoCinema))
-        elseif ALLOW_HLS then
-          ct:Append(HlsScriptTemplate('view.lua'))
-        end
+          ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')..'></canvas>' or
+               '<video id="video" autoplay playsinline controls'
+                 ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
+                      ..' data-ctok="'..CsrfToken('view.lua')..'"'
+                      ..' data-hls="'..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'"'
+                      ..(USE_MP4_HLS and ' data-hls-mp4="'..(USE_MP4_LLHLS and '2' or '1')..'"' or '')
+                      ..' data-' or ' ')..'src="'..src..'">view</video>')
+          ..VideoWrapperEnd(USE_LIVEJK and GetChatStreamNameList())..'\n'..TranscodeScriptTemplate(true,xq.caption,xq.jikkyo,xq.tslive,{n=v}))
         ct:Append('\n')
         break
       end

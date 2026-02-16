@@ -146,7 +146,7 @@ if r then
           if f then
             fsec,fsize=GetDurationSec(f)
             if vtag<=0 then
-              thumbs=ThumbnailTemplate(f,fsec,fsize,ref)
+              thumbs=ThumbnailTemplate(f,fsec,fsize,EdcbHtmlEscape(ref))
             end
             f:close()
           end
@@ -166,24 +166,20 @@ if r then
           if vtag==1 then
             src='xcode.lua?fname='..mg.url_encode(ref)..ConstructTranscodeQueries(xq)
             ct:Append('\n'..VideoWrapperBegin()
-              ..(xq.tslive and '<canvas id="video" data-pausable="1" data-src="'..src..'"></canvas>' or
-                   '<video id="video" autoplay playsinline controls '..(ALLOW_HLS and 'data-' or '')..'src="'..src..'">xcode</video>')
-              ..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList())..'\n'..TranscodeScriptTemplate(false,xq.caption,xq.jikkyo,{ofssec=fsec*(xq.offset or 0)/100,fast=xq.fast}))
-            if xq.tslive then
-              ct:Append(TsliveScriptTemplate(xq.autoCinema))
-            elseif ALLOW_HLS then
-              ct:Append(HlsScriptTemplate('xcode.lua'))
-            end
+              ..(xq.tslive and '<canvas id="video" data-pausable="1" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')..'></canvas>' or
+                   '<video id="video" autoplay playsinline controls'
+                     ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
+                          ..' data-ctok="'..CsrfToken('xcode.lua')..'"'
+                          ..' data-hls="'..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'"'
+                          ..(USE_MP4_HLS and ' data-hls-mp4="'..(USE_MP4_LLHLS and '2' or '1')..'"' or '')
+                          ..' data-' or ' ')..'src="'..src..'">xcode</video>')
+              ..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList())..'\n'..TranscodeScriptTemplate(false,xq.caption,xq.jikkyo,xq.tslive,{ofssec=fsec*(xq.offset or 0)/100,fast=xq.fast}))
           end
           ct:Append([=[
 <div style="display:none"><label><input type="checkbox" id="cb-ccinfo">字幕リスト</label>
-<div id="ccinfo-desc" style="display:none"></div></div>
-<script type="text/javascript" src="ccinfo_script.js"></script>
-<script type="text/javascript">
-runCCInfoScript("]=]..'vtt.lua?fname='..mg.url_encode(ref)..'",'
-  ..((vtag==i*2 or vtag==i*2+1) and 'function(uri){document.getElementById("vid-meta").src=uri;}' or 'true')
-  ..((vtag==1 or vtag==i*2 or vtag==i*2+1) and ',seekVideo,"#vid-wrap"' or ',seekVideoByFormSelect,"#vid-form"')..[=[);
-</script>
+<div id="ccinfo-desc" style="display:none" data-fname="]=]
+  ..EdcbHtmlEscape(ref)..'"'..((vtag==i*2 or vtag==i*2+1) and ' data-set-src="vid-meta"' or '')
+  ..' data-seek-target="vid-'..((vtag==1 or vtag==i*2 or vtag==i*2+1) and 'wrap' or 'form')..[=["></div></div>
 ]=])
         else
           ct:Append((vtag~=i*2 and vtag~=i*2+1 and '\n[<a href="mux_to_ts.lua?fname='..mg.url_encode(ref..ext)..'" download>Mux-to-TS</a>]' or '')
@@ -258,18 +254,6 @@ ct:Append([=[
 ]=])
 for i=2,#thumbs do ct:Append(thumbs[i]) end
 ct:Append([=[
-<script type="text/javascript">
-(function(){
-  var desc=document.getElementById("pginfo-desc");
-  if(desc&&desc.textContent){
-    var a=document.createElement("a");
-    a.download="a.program.txt";
-    a.href=URL.createObjectURL(new Blob(["\ufeff",desc.textContent],{endings:"native",type:"text/plain"}));
-    a.innerText="(DL)";
-    document.getElementById("pginfo-term").appendChild(a);
-  }
-})();
-</script>
 </body>
 </html>
 ]=])

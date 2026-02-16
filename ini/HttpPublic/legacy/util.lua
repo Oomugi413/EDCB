@@ -271,10 +271,12 @@ VIDEO_MUTED=false
 --音量の初期値。0～1、nilのとき未指定
 VIDEO_VOLUME=nil
 
---字幕表示のオプション https://github.com/monyone/aribb24.js#options
-ARIBB24_JS_OPTION=[=[
-  normalFont:'"Rounded M+ 1m for ARIB","Kosugi Maru",sans-serif',
-  drcsReplacement:true
+--字幕表示のオプション(JSON表記) https://github.com/monyone/aribb24.js#options
+ARIBB24_OPTION_JSON=[=[
+{
+  "normalFont":"'Rounded M+ 1m for ARIB','Kosugi Maru',sans-serif",
+  "drcsReplacement":true
+}
 ]=]
 
 --字幕表示にSVGRendererを使うかどうか。描画品質が上がる(ただし一部ブラウザで背景に線が入る)
@@ -342,13 +344,16 @@ JK_CHANNELS={
   --[0x40065]=-1,
 }
 
---chatタグ表示前の置換(JavaScript)
-JK_CUSTOM_REPLACE=[=[
-  // 広告などを下コメにする
-  tag = tag.replace(/^<chat(?![^>]*? mail=)/, '<chat mail=""');
-  tag = tag.replace(/^(<chat[^>]*? premium="3"[^>]*?>\/nicoad )(\{[^<]*?"totalAdPoint":)(\d+)/, "$1$3$2");
-  tag = tag.replace(/^<chat(?=[^>]*? premium="3")([^>]*? mail=")([^>]*?>)\/nicoad (\d*)\{[^<]*?"message":("[^<]*?")[,}][^<]*/, '<chat align="right"$1shita small yellow $2$4($3pt)');
-  tag = tag.replace(/^<chat(?=[^>]*? premium="3")([^>]*? mail=")([^>]*?>)\/spi /, '<chat align="right"$1shita small white2 $2');
+--chatタグ表示前の置換リスト(JSON表記)
+--`tag=tag.replace(new RegExp(pattern,flags),replace)`をリストの順に処理する。flagsは省略可
+--広告などを下コメにする例
+JK_CUSTOM_REPLACE_JSON=[=[
+[
+  {"pattern":"^<chat(?![^>]*? mail=)", "replace":"<chat mail=\"\""},
+  {"pattern":"^(<chat[^>]*? premium=\"3\"[^>]*?>/nicoad )(\\{[^<]*?\"totalAdPoint\":)(\\d+)", "replace":"$1$3$2"},
+  {"pattern":"^<chat(?=[^>]*? premium=\"3\")([^>]*? mail=\")([^>]*?>)/nicoad (\\d*)\\{[^<]*?\"message\":(\"[^<]*?\")[,}][^<]*", "replace":"<chat align=\"right\"$1shita small yellow $2$4($3pt)"},
+  {"pattern":"^<chat(?=[^>]*? premium=\"3\")([^>]*? mail=\")([^>]*?>)/spi ", "replace":"<chat align=\"right\"$1shita small white2 $2"}
+]
 ]=]
 
 --トランスコードするプロセスを1つだけに制限するかどうか(並列処理できる余裕がシステムにない場合など)
@@ -418,8 +423,7 @@ function VideoWrapperEnd(jkList,shiftable)
   local s='</div>'
   if jkList then
     s=s..'<div id="jikkyo-comm"'..(shiftable and ' data-shiftable="1"' or '')..' style="display:none">'
-      ..(shiftable and table.concat({'','-15)">-15','-1)">-1','1)">+1','15)">+15',''},'</button><button type="button" onclick="shiftJikkyo('):match('>(.*)<') or '')
-      ..'<button type="button" onclick="document.getElementById(\'jikkyo-config\').classList.toggle(\'display\')">Set</button>'
+      ..'<button type="button">Set</button>'
       ..'<span id="jikkyo-config"><select name="id">\n'
       ..'<option value="0" selected>jk? (初期値)\n'
     local esc=edcb.htmlEscape
@@ -480,19 +484,12 @@ function TranscodeSettingTemplate(xq,forDL,fsec)
   return s
 end
 
-function OnscreenButtonsScriptTemplate()
-  return [=[
-<script src="script.js?ver=20260123"></script>
-<script>
-runOnscreenButtonsScript();
-</script>
-]=]
-end
-
-function WebBmlScriptTemplate(label)
+function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
   local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
   local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
-  return USE_DATACAST and [=[
+  return [=[
+<script type="text/javascript" src="script.js?ver=20260215" defer></script>
+]=]..(USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
     type="button" id="key]=]..table.concat({'21">青','22">赤','23">緑','24">黄','1">↑','3">←','18">決定','4">→','2">↓','20">d','19">戻る'},[=[</button><button
@@ -504,131 +501,75 @@ function WebBmlScriptTemplate(label)
   <span class="remote-control-receiving-status" style="display:none">Loading...</span>
   <div class="remote-control-indicator"></div>
 </div>
-<label class="video-side-item"><input id="cb-datacast" type="checkbox">]=]..label..[=[</label>
-<script src="web_bml_play_ts.js"></script>
-]=]..(not zip and prefecture==0 and '' or [=[
-<script>
-(function(){
-  var prefix="nvram_prefix=receiverinfo%2F";
-]=]..(not zip and '' or [=[
-  if(!localStorage.getItem(prefix+"zipcode")){
-    localStorage.setItem(prefix+"zipcode",btoa("]=]..zip..[=["));
-  }
-]=])..(prefecture==0 and '' or [=[
-  if(!localStorage.getItem(prefix+"regioncode")){
-    localStorage.setItem(prefix+"prefecture",btoa(String.fromCharCode(]=]..prefecture..[=[)));
-    localStorage.setItem(prefix+"regioncode",btoa(String.fromCharCode(]=]..GetEwsRegionCode(prefecture)..'>>8,'..GetEwsRegionCode(prefecture)..[=[&0xff)));
-  }
-]=])..[=[
-})();
-</script>
-]=]) or ''
-end
-
-function JikkyoScriptTemplate(live,jikkyo)
-  return (live and USE_LIVEJK or not live and JKRDLOG_PATH) and [=[
-<label class="video-side-item"><input id="cb-jikkyo"]=]..Checkbox(jikkyo)..[=[>jikkyo</label>
+<label class="video-side-item"><input id="cb-datacast" type="checkbox"]=]
+  ..(zip and ' data-absent-zip="'..zip..'"' or '')
+  ..(prefecture~=0 and ' data-absent-prefecture="'..prefecture..'"' or '')
+  ..(prefecture~=0 and ' data-absent-region="'..GetEwsRegionCode(prefecture)..'"' or '')..'>'..datacastLabel..[=[</label>
+<script type="text/javascript" src="web_bml_play_ts.js" defer></script>
+]=] or '')..((live and USE_LIVEJK or not live and JKRDLOG_PATH) and [=[
+<label class="video-side-item"><input id="cb-jikkyo"]=]..Checkbox(jikkyo)
+  ..' data-comment-height="'..JK_COMMENT_HEIGHT..'" data-comment-duration="'..JK_COMMENT_DURATION..'" data-custom-replace-json="'..mg.url_encode(JK_CUSTOM_REPLACE_JSON)..[=[">jikkyo</label>
 <label class="video-side-item enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>scr</label>
-<script src="danmaku.js"></script>
-<script>
-runJikkyoScript(]=]..JK_COMMENT_HEIGHT..','..JK_COMMENT_DURATION..',function(tag){'..JK_CUSTOM_REPLACE..[=[
-  return tag;});
-</script>
-]=] or ''
-end
-
-function VideoScriptTemplate(ists)
-  return OnscreenButtonsScriptTemplate()..WebBmlScriptTemplate(ists and 'data' or 'data.psc')..JikkyoScriptTemplate(false,XCODE_CHECK_JIKKYO)..[=[
-<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(XCODE_CHECK_CAPTION)..[=[>CC.vtt</label>
-<script src="aribb24.js"></script>
-<script>
-]=]..(VIDEO_MUTED and 'vid.e.muted=true;\n' or '')..(VIDEO_VOLUME and 'vid.e.volume='..VIDEO_VOLUME..';\n' or '')..[=[
-runVideoScript(]=]..(ARIBB24_USE_SVG and 'true' or 'false')..',{'..ARIBB24_JS_OPTION..'}'..[=[);
-</script>
+<script type="text/javascript" src="danmaku.js" defer></script>
+]=] or '')..[=[
+<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)
+  ..(ARIBB24_USE_SVG and ' data-aribb24-use-svg="1"' or '')..' data-aribb24-option-json="'..mg.url_encode(ARIBB24_OPTION_JSON)..'">'..captionLabel..[=[</label>
 ]=]
 end
 
-function TranscodeScriptTemplate(live,caption,jikkyo,params)
-  return OnscreenButtonsScriptTemplate()..WebBmlScriptTemplate('data')..JikkyoScriptTemplate(live,jikkyo)..[=[
-<label id="label-caption" class="video-side-item" style="display:none"><input id="cb-caption"]=]..Checkbox(caption)..[=[>CC</label>
-]=]..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox">live</label>\n' or '')
-  ..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
-<script src="ts-live.lua?t=-misc.js"></script>
-<span id="vid-seek"><span class="thumb-popup"><canvas style="display:none"></canvas><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
+function VideoScriptTemplate(ists)
+  return PlaybackScriptTemplate(ists and 'data' or 'data.psc',false,XCODE_CHECK_JIKKYO,XCODE_CHECK_CAPTION,'CC.vtt')..[=[
+<script type="text/javascript" src="aribb24.js" defer></script>
+<button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
+  ..(VIDEO_MUTED and ' data-initial-muted="1"' or '')..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
+]=]
+end
+
+function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
+  return PlaybackScriptTemplate('data',live,jikkyo,caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
+    ..(USE_LIVEJK and ' data-post-comment-query="ctok='..CsrfToken('comment.lua')..'&amp;n='..params.n..(params.id and '&amp;id='..params.id or '')..'"' or '')..'>live</label>\n' or '')..[=[
+<span id="vid-seek" data-initial-ofssec="]=]..math.floor(params.ofssec or 0)..'" data-initial-fast="'..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..[=[">
+]=]..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
+<span class="thumb-popup"><canvas style="display:none"></canvas><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
+<script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>
 ]=] or [=[
-<span id="vid-seek"><input type="range" step="0.1" style="display:none" list="vid-seek-marker">
+<input type="range" step="0.1" style="display:none" list="vid-seek-marker">
 ]=])..[=[
 <span id="vid-seek-status" style="visibility:hidden">&emsp; &emsp; 88m88s→|%</span>
 </span><datalist id="vid-seek-marker"><option></datalist>
 <input id="vid-volume" class="video-side-item" type="range" style="display:none">
-<button id="vid-unmute" class="video-side-item" type="button" style="display:none">🔊</button>
-<script>
-]=]..(XCODE_VIDEO_MUTED and '(vid.c||vid.e).muted=true;\n' or '')..(VIDEO_VOLUME and '(vid.c||vid.e).volume='..VIDEO_VOLUME..';\n' or '')..[=[
-vid.ofssec=]=]..math.floor(params.ofssec or 0)..[=[;
-vid.fast=]=]..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..[=[;
-runTranscodeScript("]=]..(live and USE_LIVEJK and 'ctok='..CsrfToken('comment.lua')..'&n='..params.n..(params.id and '&id='..params.id or '') or '')..[=[");
-</script>
-]=]
-end
-
-function HlsScriptTemplate(target)
-  return [=[
-<script src="aribb24.js"></script>
-]=]..(ALWAYS_USE_HLS and [=[
-<script src="hls.min.js"></script>
-]=] or '')..[=[
-<script>
-runHlsScript(]=]
-  ..(ARIBB24_USE_SVG and 'true' or 'false')..',{'..ARIBB24_JS_OPTION..'},'
-  ..(ALWAYS_USE_HLS and 'true' or 'false')..','
-  ..'"ctok='..CsrfToken(target)..'&open=1",'
-  ..'"&hls='..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'",'
-  ..'"'..(USE_MP4_HLS and '&hls4='..(USE_MP4_LLHLS and '2' or '1') or '')..'"'..[=[
-);
-</script>
-]=]
-end
-
-function TsliveScriptTemplate(autoCinema)
-  return [=[
-<script src="aribb24.js"></script>
-<script src="ts-live.lua?t=.js"></script>
-<script>
-runTsliveScript(]=]
-  ..(autoCinema and 'true' or 'false')..','
-  ..(ARIBB24_USE_SVG and 'true' or 'false')..',{'..ARIBB24_JS_OPTION..'}'..[=[
-);
-</script>
-]=]
+<button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
+  ..(XCODE_VIDEO_MUTED and ' data-initial-muted="1"' or '')..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
+]=]..((tslive or ALLOW_HLS) and [=[
+<script type="text/javascript" src="aribb24.js" defer></script>
+]=] or '')..(tslive and [=[
+<script type="text/javascript" src="ts-live.lua?t=.js" defer></script>
+]=] or ALLOW_HLS and ALWAYS_USE_HLS and [=[
+<script type="text/javascript" src="hls.min.js" defer></script>
+]=] or '')
 end
 
 function ThumbnailTemplate(f,dur,fsize,fname)
   --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
-  local r={'<div id="vid-thumbs"></div>',[=[
-<script type="text/javascript" src="ts-live.lua?t=-misc.js"></script>
-<script type="text/javascript" src="thumb_script.js?ver=20250529"></script>
-<script type="text/javascript">
-setTimeout(function(){
-  createMiscWasmModule().then(function(mod){
-    runThumbnailScript(mod,[
-        ["]=]}
-  if EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') then
-    for i=1,math.min(#THUMBNAILS,5) do
-      local sec=math.floor(THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i])
-      if SeekSec(f,sec,dur,fsize) then
-        --Iフレームを取得してスクリプト上に置いておく
-        local stream=GetIFrameVideoStream(f)
-        if stream then
-          r[#r+1]=mg.base64_encode(stream)
-          r[#r+1]='",'..sec..'],\n        ["'
-        end
+  local r={'<div id="vid-thumbs" class="thumbs-'..math.min(#THUMBNAILS,5)..'"'..(fname and ' data-fname="'..fname..'"' or '')..'></div>',[=[
+<script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>
+<script type="application/json" id="vid-thumb-streams">
+[
+  ["]=]}
+  for i=1,math.min(#THUMBNAILS,5) do
+    local sec=math.floor(THUMBNAILS[i]<0 and dur+THUMBNAILS[i] or THUMBNAILS[i]<1 and dur*THUMBNAILS[i] or THUMBNAILS[i])
+    if SeekSec(f,sec,dur,fsize) then
+      --Iフレームを取得してスクリプト上に置いておく
+      local stream=GetIFrameVideoStream(f)
+      if stream then
+        r[#r+1]=mg.base64_encode(stream)
+        r[#r+1]='",'..sec..'],\n  ["'
       end
     end
   end
   if #r<=2 then return {''} end
-  r[#r]=r[#r]:gsub('].*','')..']\n      ],'..math.min(#THUMBNAILS,5)..','..(fname and '"'..mg.url_encode(fname)..'"' or 'null')..[=[);
-  });
-},0);
+  r[#r]=r[#r]:gsub('].*','')..[=[]
+]
 </script>
 ]=]
   return r
@@ -1395,7 +1336,9 @@ DOCTYPE_HTML4_STRICT='<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://
 function DefaultHeadContents()
   return [=[
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
+<script type="text/javascript" src="common.js?ver=20260215" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
 <link rel="stylesheet" type="text/css" href="default.css">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')

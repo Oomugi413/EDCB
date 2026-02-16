@@ -444,28 +444,28 @@ th, td {
   position: absolute;
 }
 
-.thumb-1, .thumb-2 {
+.thumbs-1 > canvas, .thumbs-2 > canvas {
   aspect-ratio: 16 / 9;
   width: 50%;
 }
 
-.thumb-3 {
+.thumbs-3 > canvas {
   aspect-ratio: 16 / 9;
   width: 33.3%;
 }
 
-.thumb-4 {
+.thumbs-4 > canvas {
   aspect-ratio: 16 / 9;
   width: 25%;
 }
 
-.thumb-5 {
+.thumbs-5 > canvas {
   aspect-ratio: 16 / 9;
   width: 20%;
 }
 
 @media (max-width: 479px) {
-  .thumb-3, .thumb-4, .thumb-5 {
+  .thumbs-3 > canvas, .thumbs-4 > canvas, .thumbs-5 > canvas {
     width: 50%;
   }
 }

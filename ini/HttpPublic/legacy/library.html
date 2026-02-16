@@ -184,7 +184,7 @@ else
         if f then
           fsec,fsize=GetDurationSec(f)
           if vtag<=0 then
-            thumbs=ThumbnailTemplate(f,fsec,fsize,ref)
+            thumbs=ThumbnailTemplate(f,fsec,fsize,EdcbHtmlEscape(ref))
           end
           if JKRDLOG_PATH and vtag==1 then
             --終端が現在時刻よりも昔ならば実況を逐次取得する必要はないのでshiftableにする
@@ -211,14 +211,14 @@ else
         if vtag==1 then
           src='xcode.lua?fname='..mg.url_encode(ref)..ConstructTranscodeQueries(xq)
           ct:Append('\n'..VideoWrapperBegin()
-            ..(xq.tslive and '<canvas id="video" data-pausable="1" data-src="'..src..'"></canvas>' or
-                 '<video id="video" autoplay playsinline controls '..(ALLOW_HLS and 'data-' or '')..'src="'..src..'">xcode</video>')
-            ..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList(),shiftable)..'\n'..TranscodeScriptTemplate(false,xq.caption,xq.jikkyo,{ofssec=fsec*(xq.offset or 0)/100,fast=xq.fast}))
-          if xq.tslive then
-            ct:Append(TsliveScriptTemplate(xq.autoCinema))
-          elseif ALLOW_HLS then
-            ct:Append(HlsScriptTemplate('xcode.lua'))
-          end
+            ..(xq.tslive and '<canvas id="video" data-pausable="1" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')..'></canvas>' or
+                 '<video id="video" autoplay playsinline controls'
+                   ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
+                        ..' data-ctok="'..CsrfToken('xcode.lua')..'"'
+                        ..' data-hls="'..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'"'
+                        ..(USE_MP4_HLS and ' data-hls-mp4="'..(USE_MP4_LLHLS and '2' or '1')..'"' or '')
+                        ..' data-' or ' ')..'src="'..src..'">xcode</video>')
+            ..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList(),shiftable)..'\n'..TranscodeScriptTemplate(false,xq.caption,xq.jikkyo,xq.tslive,{ofssec=fsec*(xq.offset or 0)/100,fast=xq.fast}))
         end
       else
         ct:Append((vtag~=2 and vtag~=3 and '\n[<a href="mux_to_ts.lua?fname='..mg.url_encode(ref)..'" download>Mux-to-TS</a>]' or '')
@@ -226,45 +226,12 @@ else
       end
       ct:Append([=[
 <div style="display:none"><label><input type="checkbox" id="cb-pginfo">番組情報</label>
-<div id="pginfo-desc" style="display:none"></div></div>
-<script type="text/javascript">
-(function(){
-  var cb=document.getElementById("cb-pginfo");
-  cb.checked=false;
-  cb.parentElement.parentElement.style.display=null;
-  var xhr=null;
-  cb.onclick=function(){
-    var desc=document.getElementById("pginfo-desc");
-    desc.style.display=cb.checked?null:"none";
-    if(!cb.checked||xhr)return;
-    xhr=new XMLHttpRequest();
-    xhr.open("GET","pgtxt.lua?fname=]=]..mg.url_encode(ref)..[=[");
-    xhr.onloadend=function(){
-      if(xhr.status!=200||!xhr.responseText){
-        desc.innerText="Error! ("+xhr.status+")";
-        return;
-      }
-      desc.innerHTML=xhr.responseText;
-      var a=document.createElement("a");
-      var m=(xhr.getResponseHeader("Content-Disposition")||"").match(/filename=([0-9A-Za-z_-]+\.program\.txt)/);
-      a.download=m?m[1]:"a.program.txt";
-      a.href=URL.createObjectURL(new Blob(["\ufeff",desc.textContent],{endings:"native",type:"text/plain"}));
-      a.innerText="(DL)";
-      desc.parentElement.insertBefore(a,desc);
-    };
-    xhr.send();
-  };
-})();
-</script>
+<div id="pginfo-desc" style="display:none" data-fname="]=]..EdcbHtmlEscape(ref)..[=["></div></div>
 <div style="display:none"><label><input type="checkbox" id="cb-ccinfo">字幕リスト</label>
-<div id="ccinfo-desc" style="display:none"></div></div>
-<script type="text/javascript" src="ccinfo_script.js"></script>
-<script type="text/javascript">
-runCCInfoScript("]=]..(info.ists and 'vtt.lua?fname='..mg.url_encode(ref)..'",'
-                           ..((vtag==2 or vtag==3) and 'function(uri){document.getElementById("vid-meta").src=uri;}' or 'true')
-                         or PathToRoot()..mg.url_encode(ref):gsub('%%2f','/'):gsub('%.[0-9A-Za-z]+$','')..'.vtt",false')
-  ..(vtag>=1 and vtag<=3 and ',seekVideo,"#vid-wrap"' or info.ists and ',seekVideoByFormSelect,"#vid-form"' or '')..[=[);
-</script>
+<div id="ccinfo-desc" style="display:none"]=]
+  ..(info.ists and ' data-fname="'..EdcbHtmlEscape(ref)..'"'..((vtag==2 or vtag==3) and ' data-set-src="vid-meta"' or '')
+       or ' data-vtt="'..PathToRoot()..EdcbHtmlEscape(ref):gsub('%.[0-9A-Za-z]+$','')..'.vtt"')
+  ..(vtag>=1 and vtag<=3 and ' data-seek-target="vid-wrap"' or info.ists and ' data-seek-target="vid-form"' or '')..[=[></div></div>
 ]=])
     end
     ct:Append('</div>\n')
