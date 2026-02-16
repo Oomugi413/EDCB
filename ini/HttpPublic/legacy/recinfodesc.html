@@ -109,7 +109,7 @@ if v then
             ..'<track id="vid-meta" kind="metadata"'..(ext=='' and '' or ' src="'..PathToRoot()..mg.url_encode(ref..ext):gsub('%%2f','/'):gsub('%.[0-9A-Za-z]+$','')..'.vtt"')..' type="text/vtt" default>'
             ..'</video>'..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList(),true)..'\n'..VideoScriptTemplate(ext==''))
         else
-          ct:Append((ext=='' and '' or '<a href="recinfodesc.html?id='..v.id..'&amp;vtag='..(i*2+1)..'">')
+          ct:Append((ext=='' and '' or '<a class="transit-inplace" href="recinfodesc.html?id='..v.id..'&amp;vtag='..(i*2+1)..'">')
             ..'/'..EdcbHtmlEscape(ref..ext)..(ext=='' and '' or '</a>')
             ..'\n[<a href="recinfodesc.html?id='..v.id..'&amp;vtag='..(i*2)..'">OpenFile</a>]'
             ..'\n[<a href="'..PathToRoot()..mg.url_encode(ref..ext):gsub('%%2f','/')..'" download>DL</a>]')
@@ -137,7 +137,7 @@ if v then
             ..'<input type="text" name="ren" value="/'..EdcbHtmlEscape(ref)..'" style="width:95%"><br><button type="submit">リネーム</button>\n'
             ..'※拡張子が付加されたファイルも移動します(.err, .program.txtなど)\n'
             ..'</div></form>\n'
-            ..'<form id="vid-form" action="'..(vtag==0 and 'xcode.lua' or 'recinfodesc.html')..'"><div>\n'
+            ..'<form id="vid-form"'..(vtag<0 and ' class="transit-inplace"' or '')..' action="'..(vtag==0 and 'xcode.lua' or 'recinfodesc.html')..'"><div>\n'
             ..(vtag==0 and '<input type="hidden" name="fname" value="'..EdcbHtmlEscape(ref)..'">\n'
                  or '<input type="hidden" name="id" value="'..v.id..'">\n'
                    ..'<input type="hidden" name="vtag" value="1">\n'

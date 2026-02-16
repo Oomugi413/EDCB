@@ -137,7 +137,7 @@ else
         ..'<td><a href="library.html?d='..table.concat(dirhash,',')..(v.isdir and ',' or '&amp;h=')..mg.md5(dirname..'/'..v.name)
         ..(#sort>0 and '&amp;s='..table.concat(sort,',') or '')..'">'
         ..EdcbHtmlEscape(v.name..(v.isdir and '/' or ''))..'</a>'..((v.isdir or v.ists) and '' or
-            '<a href="library.html?d='..table.concat(dirhash,',')..'&amp;h='..mg.md5(dirname..'/'..v.name)
+            '<a class="transit-inplace" href="library.html?d='..table.concat(dirhash,',')..'&amp;h='..mg.md5(dirname..'/'..v.name)
               ..(#sort>0 and '&amp;s='..table.concat(sort,',') or '')..'&amp;vtag=3">&nbsp;▶</a>')
         ..'</tr>\n')
     end
@@ -172,7 +172,7 @@ else
           ..'<track id="vid-meta" kind="metadata"'..(info.ists and '' or ' src="'..PathToRoot()..mg.url_encode(ref):gsub('%%2f','/'):gsub('%.[0-9A-Za-z]+$','')..'.vtt"')..' type="text/vtt" default>'
           ..'</video>'..VideoWrapperEnd(JKRDLOG_PATH and GetChatStreamNameList(),true)..'\n'..VideoScriptTemplate(info.ists))
       else
-        ct:Append((info.ists and '' or '<a href="library.html?d='..table.concat(dirhash,',')..'&amp;h='..hash..(#sort>0 and '&amp;s='..table.concat(sort,',') or '')..'&amp;vtag=3">')
+        ct:Append((info.ists and '' or '<a class="transit-inplace" href="library.html?d='..table.concat(dirhash,',')..'&amp;h='..hash..(#sort>0 and '&amp;s='..table.concat(sort,',') or '')..'&amp;vtag=3">')
           ..'/'..EdcbHtmlEscape(ref)..(info.ists and '' or '</a>')
           ..'\n[<a href="library.html?d='..table.concat(dirhash,',')..'&amp;h='..hash..(#sort>0 and '&amp;s='..table.concat(sort,',') or '')..'&amp;vtag=2">OpenFile</a>]'
           ..'\n[<a href="'..PathToRoot()..mg.url_encode(ref):gsub('%%2f','/')..'" download>DL</a>]')
@@ -194,7 +194,7 @@ else
           f:close()
         end
         ct:Append(' ('..('%dm%02ds|'):format(math.floor(fsec/60),fsec%60)..math.floor(fsize/1048576)..'M)<br>\n'
-          ..'<form id="vid-form" action="'..(vtag==0 and 'xcode.lua' or 'library.html')..'"><div>\n'
+          ..'<form id="vid-form"'..(vtag<0 and ' class="transit-inplace"' or '')..' action="'..(vtag==0 and 'xcode.lua' or 'library.html')..'"><div>\n'
           ..(vtag==0 and '<input type="hidden" name="fname" value="'..EdcbHtmlEscape(ref)..'">\n'
                or '<input type="hidden" name="d" value="'..table.concat(dirhash,',')..'">\n'
                  ..'<input type="hidden" name="h" value="'..hash..'">\n'

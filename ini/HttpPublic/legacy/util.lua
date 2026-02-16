@@ -265,7 +265,8 @@ XCODE_CHECK_JIKKYO=false
 
 --トランスコード時、初期値ミュートで再生するかどうか
 --自動再生が無効になるブラウザが多いため、一時停止しつづけるとタイムアウトするトランスコード時はミュートを推奨
-XCODE_VIDEO_MUTED=true
+--false、true、または'auto'=自動再生が無効になりそうな場合のみ
+XCODE_VIDEO_MUTED='auto'
 
 --非トランスコード時、初期値ミュートで再生するかどうか
 VIDEO_MUTED=false
@@ -542,7 +543,8 @@ function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
 </span><datalist id="vid-seek-marker"><option></datalist>
 <input id="vid-volume" class="video-side-item" type="range" style="display:none">
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
-  ..(XCODE_VIDEO_MUTED and ' data-initial-muted="1"' or '')..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
+  ..(XCODE_VIDEO_MUTED and ' data-initial-muted="'..(XCODE_VIDEO_MUTED=='auto' and 'auto' or 1)..'"' or '')
+  ..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
 ]=]..((tslive or ALLOW_HLS) and [=[
 <script type="text/javascript" src="aribb24.js" defer></script>
 ]=] or '')..(tslive and [=[

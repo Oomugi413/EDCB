@@ -429,7 +429,7 @@ const adjustVideoMaxWidth=()=>{
   }
 };
 
-const runPlaybackScript=()=>{
+const runPlaybackScript=(isTrusted)=>{
   vid={e:document.getElementById("video"),unmute(){(vid.c||vid.e).muted=false;}};
   vid.initSrc=vid.e.dataset.src||vid.e.getAttribute("src");
   if(vid.e.tagName=="CANVAS"){
@@ -440,7 +440,7 @@ const runPlaybackScript=()=>{
     vid.c=vid;
   }
   const btnUnmute=document.getElementById("vid-unmute");
-  if(btnUnmute.dataset.initialMuted){
+  if(btnUnmute.dataset.initialMuted&&(!isTrusted||btnUnmute.dataset.initialMuted!="auto")){
     (vid.c||vid.e).muted=true;
   }
   if(btnUnmute.dataset.initialVolume){
@@ -470,6 +470,7 @@ const runPlaybackScript=()=>{
   vfull=document.getElementById("vid-full");
   vwrap=document.getElementById("vid-wrap");
   window.addEventListener("load",adjustVideoMaxWidth);
+  window.addEventListener("my-load",adjustVideoMaxWidth);
   window.addEventListener("resize",adjustVideoMaxWidth);
   let btn=document.createElement("button");
   btn.type="button";
@@ -1151,6 +1152,7 @@ const runTranscodeScript=()=>{
     rangeSeek.style.width=Math.max(1-othersWidth/window.innerWidth,0.3)*100+"%";
   };
   window.addEventListener("load",adjustSeekbarWidth);
+  window.addEventListener("my-load",adjustSeekbarWidth);
   window.addEventListener("resize",adjustSeekbarWidth);
   vid.fastParam="";
   let openSubStream=()=>{};

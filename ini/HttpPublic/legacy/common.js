@@ -2,7 +2,27 @@
 //jshint browser: true, esversion: 3
 
 if(window.addEventListener)window.addEventListener("DOMContentLoaded",function(){
+  var unloadCount=0;
+  function createUnloaded(){
+    var c=unloadCount;
+    return function(){return c<unloadCount;};
+  }
+
+  if(window.createMiscWasmModule){
+    (function(){
+      var cachedMod=null;
+      var createMod=createMiscWasmModule;
+      createMiscWasmModule=function(){
+        return new Promise(function(res,rej){
+          if(cachedMod)res(cachedMod);
+          else createMod().then(function(mod){res(cachedMod=mod);},rej);
+        });
+      };
+    })();
+  }
+
   function runCCInfoScript(){
+    var unloaded=createUnloaded();
     var hw=" ,.:;?!^_/|()[]{}+-=<>$%#&*@";
     var fw="\u3000\uff0c\uff0e\uff1a\uff1b\uff1f\uff01\uff3e\uff3f\uff0f\uff5c\uff08\uff09\uff3b\uff3d\uff5b\uff5d\uff0b\uff0d\uff1d\uff1c\uff1e\uff04\uff05\uff03\uff06\uff0a\uff20";
     var reFull=new RegExp("["+fw+"\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]","g");
@@ -56,6 +76,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
     cb.parentElement.parentElement.style.display=null;
     var dummyVideo=null;
     cb.onclick=function(){
+      if(unloaded())return;
       var desc=document.getElementById("ccinfo-desc");
       desc.style.display=cb.checked?null:"none";
       if(!cb.checked||dummyVideo)return;
@@ -71,6 +92,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
         track.mode="hidden";
         var to=50;
         var waitForCue=function(){
+          if(unloaded())return;
           if(track.cues.length==0){
             if(--to<0){
               desc.innerText="Error!";
@@ -168,6 +190,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
               desc.innerText="Loading... ("+Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s|count="+count+")";
             }
           }
+          if(unloaded())xhr.abort();
         };
         xhr.send();
       }else{
@@ -177,10 +200,12 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
   }
 
   function runThumbnailScript(){
+    var unloaded=createUnloaded();
     var thumbs=document.getElementById("vid-thumbs");
     if(!thumbs||!window.createMiscWasmModule)return;
     try{
       createMiscWasmModule().then(function(mod){
+        if(unloaded())return;
         var flipTimer=0;
         var pushed=null;
         var div=document.createElement("div");
@@ -207,6 +232,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
                 xhr.open("GET","grabber.lua?fname="+encodeURIComponent(thumbs.dataset.fname)+"&ofssec="+(sec+5));
                 xhr.responseType="arraybuffer";
                 xhr.onloadend=function(){
+                  if(unloaded())return;
                   if(xhr.status!=200||!xhr.response){
                     if(flipTimer==myTimer)flipTimer=setTimeout(flip,3000);
                     return;
@@ -257,6 +283,66 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
         }
       });
     }catch(e){console.warn("createMiscWasmModule():",e);}
+  }
+
+  function runTransitInplaceScript(onLoaded){
+    if(!window.URLSearchParams)return;
+    var body=document.getElementsByTagName("body")[0];
+    function transit(method,url){
+      var xhr=new XMLHttpRequest();
+      xhr.open(method,url);
+      xhr.onloadend=function(){
+        var m=xhr.status==200&&xhr.responseText.match(/<body>([\s\S]*)<\/body>/);
+        if(!m){
+          if(method.toUpperCase()=="GET")location.href=url.href;
+          return;
+        }
+        var loaded={};
+        body.querySelectorAll("script").forEach(function(s){
+          var src=s.getAttribute("src");
+          if(src)loaded[src]=true;
+        });
+        unloadCount++;
+        history.pushState(null,"",url.href);
+        onpopstate=function(){history.go();};
+        body.innerHTML=m[1];
+        var loading={};
+        body.querySelectorAll("script").forEach(function(s){
+          var src=s.getAttribute("src");
+          if(src&&!loaded[src]){
+            s=document.createElement("script");
+            s.src=src;
+            loading[src]=true;
+            s.onerror=s.onload=function(){
+              if(loading[src]){
+                delete loading[src];
+                if(Object.keys(loading).length==0){
+                  onLoaded();
+                  window.dispatchEvent(new Event("my-load"));
+                }
+              }
+            };
+            body.appendChild(s);
+          }
+        });
+      };
+      xhr.send();
+    }
+    body.querySelectorAll(".transit-inplace").forEach(function(a){
+      if(a.href){
+        a.onclick=function(e){
+          e.preventDefault();
+          transit("GET",new URL(a.href));
+        };
+      }else{
+        a.onsubmit=function(e){
+          e.preventDefault();
+          var url=new URL(a.action);
+          url.search=new URLSearchParams(new FormData(a));
+          transit(a.method,url);
+        };
+      }
+    });
   }
 
   function onAboutLoaded(){
@@ -380,7 +466,8 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
         xhr.send();
       };
     }
-    if(document.getElementById("video"))runPlaybackScript();
+    runTransitInplaceScript(onEpglistLoaded);
+    if(document.getElementById("video"))runPlaybackScript(unloadCount>0);
   }
 
   function onLibraryLoaded(){
@@ -413,7 +500,8 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
     }
     runCCInfoScript();
     runThumbnailScript();
-    if(document.getElementById("video"))runPlaybackScript();
+    runTransitInplaceScript(onLibraryLoaded);
+    if(document.getElementById("video"))runPlaybackScript(unloadCount>0);
   }
 
   function onNvramLoaded(){
@@ -491,11 +579,13 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
     onEpginfoLoaded();
     runCCInfoScript();
     runThumbnailScript();
-    if(document.getElementById("video"))runPlaybackScript();
+    runTransitInplaceScript(onRecinfodescReserveinfoLoaded);
+    if(document.getElementById("video"))runPlaybackScript(unloadCount>0);
   }
 
   function onReserveLoaded(){
-    if(document.getElementById("video"))runPlaybackScript();
+    runTransitInplaceScript(onReserveLoaded);
+    if(document.getElementById("video"))runPlaybackScript(unloadCount>0);
   }
 
   switch(document.getElementById("common-js").getAttribute("data-script-name")){
