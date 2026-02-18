@@ -1138,16 +1138,8 @@ const runTranscodeScript=()=>{
     setCheckLivePosition(checkLivePosition);
   }
   const rangeSeek=document.querySelector("#vid-seek input");
-  const vseekStatus=document.getElementById("vid-seek-status");
-  let vseekStatusMaxWidth=-1;
   const adjustSeekbarWidth=()=>{
-    if(vseekStatusMaxWidth<0){
-      //Estimation using initial text width
-      vseekStatusMaxWidth=vseekStatus.offsetWidth*2;
-      vseekStatus.innerText="";
-      vseekStatus.style.visibility=null;
-    }
-    let othersWidth=vseekStatusMaxWidth;
+    let othersWidth=0;
     for(const e of document.querySelectorAll(".video-side-item")){othersWidth+=e.offsetWidth;}
     rangeSeek.style.width=Math.max(1-othersWidth/window.innerWidth,0.3)*100+"%";
   };
@@ -1394,10 +1386,10 @@ const runTranscodeScript=()=>{
   if(voffset){
     const vselect=document.querySelector('#vid-form select[name="offset"]');
     const vthumb=document.querySelector("#vid-seek canvas");
+    const vstatus=document.getElementById("vid-seek-status");
     let thumbTimer=0;
     let thumbXhr=null;
-    const rangeSeekSec=()=>{
-      const n=rangeSeek.value;
+    const rangeSeekSec=n=>{
       const i=Math.floor(n);
       return Math.floor((vselect.options[Math.min(i+1,100)].dataset.sec||-1)*(n-i)-
                         (vselect.options[Math.min(i,100)].dataset.sec||-1)*(n-i-1));
@@ -1405,28 +1397,43 @@ const runTranscodeScript=()=>{
     const formatSec=sec=>{
       return Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
     };
+    let mouseX=null;
     rangeSeek.ontouchend=rangeSeek.onmouseleave=()=>{
+      mouseX=null;
       vseek.classList.remove("active");
-      vseekStatus.innerText="";
       if(vthumb)vthumb.style.display="none";
+      vstatus.style.display="none";
+      vstatus.classList.remove("follow-thumb");
     };
-    rangeSeek.oninput=()=>{
-      vseek.classList.add("active");
-      vseekStatus.innerText=formatSec(currentAbsTime())+"\u2192"+
-        (rangeSeekSec()>=0&&vid.seekWithoutTransition?formatSec(rangeSeekSec()):
-           vselect.options[Math.floor(rangeSeek.value)].textContent.match(/^(?:\d+m\d+s)?/).m[0])+
-        "|"+Math.floor(rangeSeek.value)+"%";
+    const setLeft=()=>{
+      const e=vstatus.classList.contains("follow-thumb")?vthumb:vstatus;
+      const x=(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX)-e.offsetWidth/2;
+      e.style.left=Math.floor(x)+"px";
+      e.style.left=Math.floor(x-Math.min(e.getBoundingClientRect().left,0)-Math.max(e.getBoundingClientRect().right-window.innerWidth,0))+"px";
+      vstatus.style.left=e.style.left;
+    };
+    const popup=()=>{
+      //Adjust the offset between slider and mouse.
+      const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
+      const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
+      vstatus.innerText=formatSec(currentAbsTime())+"\u2192"+
+        (rangeSeekSec(n)>=0&&vid.seekWithoutTransition?formatSec(rangeSeekSec(n)):
+           vselect.options[Math.floor(n)].textContent.match(/^(?:\d+m\d+s)?/).m[0])+
+        "|"+Math.floor(n)+"%";
+      vstatus.style.display=null;
+      setLeft();
       if(vthumb&&vid.grabFirstFrame){
         clearTimeout(thumbTimer);
         thumbTimer=setTimeout(()=>{
-          if(!vseek.classList.contains("active")||thumbXhr)return;
+          if((mouseX==null&&!vseek.classList.contains("active"))||thumbXhr)return;
           //Get thumbnail of seek position.
           thumbXhr=new XMLHttpRequest();
-          thumbXhr.open("GET","grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+
-            (rangeSeekSec()>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec():"&offset="+Math.floor(rangeSeek.value)));
+          const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
+          const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
+          thumbXhr.open("GET","grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+(rangeSeekSec(n)>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec(n):"&offset="+Math.floor(n)));
           thumbXhr.responseType="arraybuffer";
           thumbXhr.onloadend=()=>{
-            if(vseek.classList.contains("active")&&thumbXhr.status==200&&thumbXhr.response){
+            if((mouseX!=null||vseek.classList.contains("active"))&&thumbXhr.status==200&&thumbXhr.response){
               const buffer=vid.getGrabberInputBuffer(thumbXhr.response.byteLength);
               buffer.set(new Uint8Array(thumbXhr.response));
               const frame=vid.grabFirstFrame(thumbXhr.response.byteLength);
@@ -1435,6 +1442,8 @@ const runTranscodeScript=()=>{
                 vthumb.height=frame.height;
                 vthumb.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
                 vthumb.style.display=null;
+                vstatus.classList.add("follow-thumb");
+                setLeft();
               }
             }
             thumbXhr=null;
@@ -1443,16 +1452,25 @@ const runTranscodeScript=()=>{
         },thumbTimer?200:0);
       }
     };
+    rangeSeek.oninput=()=>{
+      vseek.classList.add("active");
+      popup();
+    };
     rangeSeek.onchange=()=>{
       vselect.options[Math.floor(rangeSeek.value)].selected=true;
-      if(rangeSeekSec()>=0&&vid.seekWithoutTransition){
-        vid.ofssec=rangeSeekSec();
+      if(rangeSeekSec(rangeSeek.value)>=0&&vid.seekWithoutTransition){
+        vid.ofssec=Math.max(rangeSeekSec(rangeSeek.value)-1,0);
         openSubStream();
         vid.seekWithoutTransition();
+        mouseX=null;
         vseek.classList.remove("active");
       }else{
         document.querySelector('#vid-form button[type="submit"]').click();
       }
+    };
+    rangeSeek.onmousemove=e=>{
+      if(mouseX!=null&&!vseek.classList.contains("active"))popup();
+      mouseX=e.offsetX;
     };
     (vid.c||vid.e).ontimeupdate=()=>{
       const sec=currentAbsTime();

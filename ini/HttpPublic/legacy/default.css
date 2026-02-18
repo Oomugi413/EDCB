@@ -45,6 +45,16 @@ a:hover {
   text-decoration: underline;
 }
 
+@media (hover: none) {
+  a:hover {
+    text-decoration: none;
+  }
+
+  a:active {
+    text-decoration: underline;
+  }
+}
+
 a:visited {
   color: var(--light, revert) var(--dark, #f7e);
 }
@@ -81,15 +91,30 @@ button:hover {
   color: white;
 }
 
+@media (hover: none) {
+  button:hover {
+    background: var(--light, #eee) var(--dark, #400);
+    color: var(--light, #07d) var(--dark, #c6f);
+  }
+
+  button:active {
+    background: var(--light, #07d) var(--dark, #c6f);
+    color: white;
+  }
+}
+
 input[type="checkbox"] {
   height: 1em;
   margin-left: 0.2em;
   width: 1em;
 }
 
+#vid-seek {
+  white-space: nowrap;
+}
+
 .thumb-popup {
   position: relative;
-  white-space: nowrap;
 }
 
 #vid-seek canvas {
@@ -109,7 +134,16 @@ input[type="checkbox"] {
 }
 
 #vid-seek-status {
-  white-space: nowrap;
+  background: black;
+  color: white;
+  padding: 0 0.1em;
+  position: absolute;
+  top: -4em;
+}
+
+#vid-seek-status.follow-thumb {
+  opacity: 0.7;
+  top: -10em;
 }
 
 .video-full-container #vid-seek {
@@ -145,9 +179,13 @@ input[type="checkbox"] {
 }
 
 .video-full-container #vid-seek-status {
-  background: black;
-  color: white;
-  opacity: 0.7;
+  bottom: -8em;
+  line-height: normal;
+  top: auto;
+}
+
+.video-full-container #vid-seek-status.follow-thumb {
+  bottom: -9.7em;
 }
 
 #vid-volume {
@@ -667,9 +705,16 @@ th, td {
   color: #000;
 }
 
-.video-full-container .full-control:hover,
-.video-full-container .minimize-jikkyo:hover {
+.video-full-container .full-control:active,
+.video-full-container .minimize-jikkyo:active {
   opacity: 1;
+}
+
+@media (hover: hover) {
+  .video-full-container .full-control:hover,
+  .video-full-container .minimize-jikkyo:hover {
+    opacity: 1;
+  }
 }
 
 .video-full-container:fullscreen .full-control,
@@ -692,18 +737,34 @@ th, td {
   opacity: 0;
 }
 
-.video-full-container:fullscreen .exit-control:hover {
+.video-full-container:fullscreen .exit-control:active {
   opacity: 1;
 }
 
-.video-full-container:-webkit-full-screen .exit-control:hover {
+.video-full-container:-webkit-full-screen .exit-control:active {
   opacity: 1;
 }
 
-.video-full-container .live-control:hover,
-.video-full-container .comment-control:hover,
-.video-full-container .move-comment-control:hover {
+.video-full-container .live-control:active,
+.video-full-container .comment-control:active,
+.video-full-container .move-comment-control:active {
   opacity: 1;
+}
+
+@media (hover: hover) {
+  .video-full-container:fullscreen .exit-control:hover {
+    opacity: 1;
+  }
+
+  .video-full-container:-webkit-full-screen .exit-control:hover {
+    opacity: 1;
+  }
+
+  .video-full-container .live-control:hover,
+  .video-full-container .comment-control:hover,
+  .video-full-container .move-comment-control:hover {
+    opacity: 1;
+  }
 }
 
 .data-broadcasting-browser-container {

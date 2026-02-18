@@ -533,13 +533,9 @@ function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
   return PlaybackScriptTemplate('data',live,jikkyo,caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
     ..(USE_LIVEJK and ' data-post-comment-query="ctok='..CsrfToken('comment.lua')..'&amp;n='..params.n..(params.id and '&amp;id='..params.id or '')..'"' or '')..'>live</label>\n' or '')..[=[
 <span id="vid-seek" data-initial-ofssec="]=]..math.floor(params.ofssec or 0)..'" data-initial-fast="'..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..[=[">
-]=]..(not live and THUMBNAIL_ON_SEEK and EdcbFindFilePlain(mg.script_name:gsub('[^\\/]*$','')..'ts-live-misc.js') and [=[
-<span class="thumb-popup"><canvas style="display:none"></canvas><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
-<script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>
-]=] or [=[
-<input type="range" step="0.1" style="display:none" list="vid-seek-marker">
-]=])..[=[
-<span id="vid-seek-status" style="visibility:hidden">&emsp; &emsp; 88m88s→|%</span>
+<span class="thumb-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
+<canvas style="display:none"></canvas><script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>]=] or '')..[=[
+<div id="vid-seek-status" style="display:none"></div><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
 </span><datalist id="vid-seek-marker"><option></datalist>
 <input id="vid-volume" class="video-side-item" type="range" style="display:none">
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
