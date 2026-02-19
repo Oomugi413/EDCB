@@ -4,6 +4,7 @@ dofile(mg.script_name:gsub('[^\\/]*$','')..'util.lua')
 info=mg.get_info('system')
 info='mg_ver. '..(info:match('"version" : "(.-)"') or '')..', lua_ver. '..(info:match('"lua_version" : "(.-)"') or '')..', remote_addr='..mg.request_info.remote_addr
 info=info:gsub('[<>&]','')
+tools=WIN32 and PathAppend(EdcbModulePath(),'Tools')
 
 ct=CreateContentBuilder(GZIP_THRESHOLD_BYTE)
 ct:Append(DOCTYPE_HTML4_STRICT..[=[
@@ -17,7 +18,7 @@ ct:Append(DOCTYPE_HTML4_STRICT..[=[
 <div id="main">
   <p>
     EDCBの操作をブラウザから行うことができます。このWebUIではJavaScript(メディア再生や補助的なものを除く)やCookieは使用しません。<br>
-    このWebUIでは公開フォルダ(HttpPublic)にないファイルには原則アクセスしません。
+    このWebUIでは公開フォルダ(HttpPublic)にないファイルには原則アクセスしません。また、明示的に設定されないかぎり、CDNを含む外部サイトへのアクセスを一切行いません。
   </p><p>
     EDCBの<a href="setting_rec_folder.html">録画保存フォルダ</a>を公開フォルダ配下(公開フォルダ直下のvideoフォルダを推奨)に設定すれば、リンク表示などの追加機能を利用できます。
   </p><p>
@@ -97,29 +98,29 @@ ct:Append(DOCTYPE_HTML4_STRICT..[=[
   | (Windows以外では各コマンドはパスの通った場所に置く。以下はWindowsのみ)
   |
   |---Tools/
-  |    |---asyncbuf.exe
-  |    |---edcbnosuspend.exe ※tsreadex.exeをコピーしたもの
-  |    |---psisiarc.exe
-  |    |---psisimux.exe
-  |    |---tsmemseg.exe
-  |    |---tspgtxt.exe
-  |    |---tsreadex.exe
+  |    |---asyncbuf.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\asyncbuf.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---edcbnosuspend.exe ※tsreadex.exeをコピーしたもの<b>]=]..(tools and EdcbFindFilePlain(tools..'\\edcbnosuspend.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---psisiarc.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\psisiarc.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---psisimux.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\psisimux.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---tsmemseg.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\tsmemseg.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---tspgtxt.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\tspgtxt.exe') and '【配置済み】' or '')..[=[</b>
+  |    |---tsreadex.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\tsreadex.exe') and '【配置済み】' or '')..[=[</b>
   |    |---ffmpeg/
-  |    |    |---ffmpeg.exe
+  |    |    |---ffmpeg.exe<b>]=]..(tools and EdcbFindFilePlain(tools..'\\ffmpeg\\ffmpeg.exe') and '【配置済み】' or '')..[=[</b>
   |    |    |---ffprobe.exe ※LegacyWebUIでは未使用
   |    |    :
   |    |
   |    |---NVEncC/
-  |    |    |---NVEncC.exeまたはNVEncC64.exe
+  |    |    |---NVEncC.exeまたはNVEncC64.exe<b>]=]..(tools and (EdcbFindFilePlain(tools..'\\NVEncC\\NVEncC64.exe') or EdcbFindFilePlain(tools..'\\NVEncC\\NVEncC.exe')) and '【配置済み】' or '')..[=[</b>
   |    |    :
   |    |
   |    |---QSVEncC/
-  |    |    |---QSVEncC.exeまたはQSVEncC64.exe
+  |    |    |---QSVEncC.exeまたはQSVEncC64.exe<b>]=]..(tools and (EdcbFindFilePlain(tools..'\\QSVEncC\\QSVEncC64.exe') or EdcbFindFilePlain(tools..'\\QSVEncC\\QSVEncC.exe')) and '【配置済み】' or '')..[=[</b>
   |    |    :
   |    |
   |    |---VCEEncC/
-  |    |    |---VCEEncC.exeまたはVCEEncC64.exe
-  |    :    :
+  |    :    |---VCEEncC.exeまたはVCEEncC64.exe<b>]=]..(tools and (EdcbFindFilePlain(tools..'\\VCEEncC\\VCEEncC64.exe') or EdcbFindFilePlain(tools..'\\VCEEncC\\VCEEncC.exe')) and '【配置済み】' or '')..[=[</b>
+  |         :
   |
   |---EpgTimer.exe
   |---EpgTimerSrv.exe
