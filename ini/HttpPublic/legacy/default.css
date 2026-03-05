@@ -517,6 +517,8 @@ th, td {
 }
 
 #video {
+  --poster-bg-color: #99d9ea;
+  --poster-color: white;
   width: 100%;
 }
 

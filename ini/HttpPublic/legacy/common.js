@@ -139,7 +139,13 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
                         }
                       };
                     }else{
-                      a.onclick=function(){seekVideo(Math.max(sec-1,0));};
+                      a.onclick=function(e){
+                        seekVideo(Math.max(sec-1,0));
+                        if(unloadCount>0){
+                          e.preventDefault();
+                          window.scrollTo(0,window.scrollY+document.getElementById(desc.dataset.seekTarget).getBoundingClientRect().top);
+                        }
+                      };
                     }
                     a.href="#"+desc.dataset.seekTarget;
                   }

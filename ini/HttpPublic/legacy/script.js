@@ -841,8 +841,14 @@ const runVideoScript=()=>{
       }catch(e){
         console.warn("aribb24OptionJson:",e);
       }
-      cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
-      cap.attachMedia(vid.e);
+      try{
+        cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+        cap.attachMedia(vid.e);
+      }catch(e){
+        cap=null;
+        console.warn("aribb24js:",e);
+        return;
+      }
       document.getElementById("label-caption").style.display="inline";
       if(!cbCaption.checked){cap.hide();}
       dataList.reverse();
@@ -1504,28 +1510,27 @@ const runTranscodeScript=()=>{
     };
   }
   if(!vid.c){
-    let unfixTimer=0;
-    vid.fixSizeThenUnfixOnPlay=()=>{
-      if(!vid.e.style.width){
-        //Temporarily fix the size.
-        vid.e.style.width=vid.e.clientWidth+"px";
-        vid.e.style.height=vid.e.clientHeight+"px";
-        const unfix=()=>{
-          vid.e.onplay=null;
-          clearTimeout(unfixTimer);
-          unfixTimer=setTimeout(()=>{if(/px$/.test(vid.e.style.width))vid.e.style.width=vid.e.style.height=null;},500);
-        };
-        vid.e.onplay=unfix;
-        clearTimeout(unfixTimer);
-        unfixTimer=setTimeout(unfix,8000);
-      }
-    };
     let swtCount=0;
     vid.seekWithoutTransition=()=>{
-      vid.fixSizeThenUnfixOnPlay();
       //"count" is to ensure that the src attribute is reloaded.
       vid.e.src=(vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc).replace("&load=","&reload=")+"&ofssec="+vid.ofssec+"&count="+(++swtCount);
     };
+    try{
+      const canvas=document.createElement("canvas");
+      const m=(vid.e.dataset.poster||"").match(/^(\d+)x(\d+)(,.*|)$/);
+      canvas.width=m?parseInt(m[1],10)||1280:1280;
+      canvas.height=m?parseInt(m[2],10)||720:720;
+      const ctx=canvas.getContext("2d");
+      ctx.fillStyle=getComputedStyle(vid.e).getPropertyValue("--poster-bg-color")||"gray";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle=getComputedStyle(vid.e).getPropertyValue("--poster-color")||"white";
+      ctx.textAlign="center";
+      ctx.font=canvas.height/10+"px sans-serif";
+      ctx.fillText(m&&m[3]?m[3].substring(1):"Loading...",canvas.width/2,canvas.height/2);
+      vid.e.poster=canvas.toDataURL();
+    }catch(e){
+      console.warn("poster:",e);
+    }
   }
   seekVideo=(sec)=>{
     if(vid.seekWithoutTransition){
@@ -1549,10 +1554,15 @@ const runHlsScript=()=>{
           console.warn("aribb24OptionJson:",e);
         }
         aribb24Option.enableAutoInBandMetadataTextTrackDetection=!vid.e.dataset.alwaysUseHls||!Hls.isSupported();
-        cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
-        cap.attachMedia(vid.e);
+        try{
+          cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+          cap.attachMedia(vid.e);
+        }catch(e){
+          cap=null;
+          console.warn("aribb24js:",e);
+        }
       }
-      cap.show();
+      if(cap)cap.show();
     }else if(cap){
       cap.hide();
     }
@@ -1565,7 +1575,6 @@ const runHlsScript=()=>{
     document.getElementById("label-caption").style.display="inline";
     const cbLive=document.getElementById("cb-live");
     if(cbLive)cbLive.checked=true;
-    vid.e.poster="loading.png";
     waitForHlsStart(vid.initSrc+
       //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
       "&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
@@ -1599,7 +1608,6 @@ const runHlsScript=()=>{
         let swtCount=0;
         const swt=()=>{
           vid.seekWithoutTransition=null;
-          vid.fixSizeThenUnfixOnPlay();
           hls.detachMedia();
           waitForHlsStart((vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc).replace("&load=","&reload=")+"&ofssec="+vid.ofssec+
             //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
@@ -1624,7 +1632,6 @@ const runHlsScript=()=>{
       document.getElementById("label-caption").style.display="inline";
       const cbLive=document.getElementById("cb-live");
       if(cbLive)cbLive.checked=true;
-      vid.e.poster="loading.png";
       waitForHlsStart(vid.initSrc+"&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4?"":"&hls4="+vid.e.dataset.hlsMp4),"ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
         vid.e.src=src;
       });
@@ -1709,10 +1716,15 @@ const runTsliveScript=()=>{
         }catch(e){
           console.warn("aribb24OptionJson:",e);
         }
-        cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
-        cap.attachMedia(null,vcont);
+        try{
+          cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
+          cap.attachMedia(null,vcont);
+        }catch(e){
+          cap=null;
+          console.warn("aribb24js:",e);
+        }
       }
-      cap.show();
+      if(cap)cap.show();
     }else if(cap){
       cap.hide();
     }

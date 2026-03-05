@@ -129,7 +129,7 @@ if #a>0 then
         ct:Append(VideoWrapperBegin()
           ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')
                              ..(xq.deinterlace and ' data-deinterlace="'..xq.deinterlace..'"' or '')..'></canvas>' or
-               '<video id="video" autoplay playsinline controls'
+               '<video id="video" autoplay playsinline controls'..(xq.poster and ' data-poster="'..EdcbHtmlEscape(xq.poster)..'"' or '')
                  ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
                       ..' data-ctok="'..CsrfToken('view.lua')..'"'
                       ..' data-hls="'..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'"'
