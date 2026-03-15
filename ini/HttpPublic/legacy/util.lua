@@ -374,6 +374,13 @@ JK_CUSTOM_REPLACE_JSON=[=[
 ]
 ]=]
 
+--チャプターファイルの拡張子の候補。'.chapter'はTVTestのTvtPlay、ほかはNero/OGM形式とみなす。最終候補が'@'のときはファイル名に含まれるTvtPlay形式を読み込む
+CHAPTER_EXTENSIONS='.chapter|.chapters.txt|@'
+
+--メディアファイルと同じ場所にこの名前のフォルダがあるときチャプターファイルをまずここから探す(''のときメディアファイルと同じ場所のみ)
+CHAPTERS_FOLDER_NAME=''
+--CHAPTERS_FOLDER_NAME='chapters'
+
 --トランスコードするプロセスを1つだけに制限するかどうか(並列処理できる余裕がシステムにない場合など)
 XCODE_SINGLE=false
 --ログを"log"フォルダに保存するかどうか
@@ -411,7 +418,7 @@ function GetTranscodeQueries(qs)
     tslive=XCODE_OPTIONS[option or 1].tslive,
     autoCinema=XCODE_OPTIONS[option or 1].autoCinema,
     deinterlace=(XCODE_OPTIONS[option or 1].deinterlace or ''):match('^[0-9A-Za-z]+$'),
-    offset=GetVarInt(qs,'offset',0,100),
+    offset=GetVarInt(qs,'offset',-100000,100),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,
     --0は明示的に等速を表す
@@ -461,7 +468,7 @@ function VideoWrapperEnd(jkList,shiftable)
   return s
 end
 
-function TranscodeSettingTemplate(xq,forDL,fsec)
+function TranscodeSettingTemplate(xq,forDL,fsec,chapters)
   local s='<select name="option">'
   local esc=edcb.htmlEscape
   edcb.htmlEscape=15
@@ -474,6 +481,17 @@ function TranscodeSettingTemplate(xq,forDL,fsec)
   s=s..'</select>\n'
   if fsec then
     s=s..'<select name="offset">'
+    if fsec>0 and chapters then
+      edcb.htmlEscape=15
+      local sel=nil
+      for i,v in ipairs(chapters) do
+        local sec=math.floor(v.pos/1000<fsec and v.pos/1000 or fsec)
+        --便利のため1秒だけ引く
+        sel=sel or sec>1 and xq.offset==1-sec and i
+        s=s..'<option value="'..math.min(1-sec,0)..'"'..Selected(sel==i)..' data-sec="'..sec..('">%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
+      end
+      edcb.htmlEscape=esc
+    end
     for i=0,100 do
       s=s..'<option value="'..i..'"'..Selected((xq.offset or 0)==i)..(fsec>0 and ' data-sec="'..math.floor(fsec*i/100)..'"' or '')..'>'
         ..(fsec>0 and ('%dm%02ds'):format(math.floor(fsec*i/100/60),fsec*i/100%60)..(i%5==0 and '|'..i..'%' or '') or i..'%')
@@ -537,19 +555,33 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
 ]=]
 end
 
-function VideoScriptTemplate(ists)
-  return PlaybackScriptTemplate(ists and 'data' or 'data.psc',false,XCODE_CHECK_JIKKYO,XCODE_CHECK_CAPTION,'CC.vtt')..[=[
+function VideoScriptTemplate(ists,chapters)
+  local s=PlaybackScriptTemplate(ists and 'data' or 'data.psc',false,XCODE_CHECK_JIKKYO,XCODE_CHECK_CAPTION,'CC.vtt')..[=[
 <script type="text/javascript" src="aribb24.js" defer></script>
+]=]
+  if chapters then
+    s=s..'<select id="vid-chapters">'
+    local esc=edcb.htmlEscape
+    edcb.htmlEscape=15
+    for i,v in ipairs(chapters) do
+      s=s..'<option '..(v.pos==math.huge and 'disabled value="">END ' or 'value="'..(v.pos/1000)
+                          ..('">%dm%02ds '):format(math.floor(v.pos/60000),math.floor(v.pos/1000)%60))..EdcbHtmlEscape(v.name)
+    end
+    edcb.htmlEscape=esc
+    s=s..'</select>\n'
+  end
+  return s..[=[
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
   ..(VIDEO_MUTED and ' data-initial-muted="1"' or '')..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
 ]=]
 end
 
-function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
-  return PlaybackScriptTemplate('data',live,jikkyo,caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
+function TranscodeScriptTemplate(live,xq,params)
+  return PlaybackScriptTemplate('data',live,xq.jikkyo,xq.caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
     ..(USE_LIVEJK and ' data-post-comment-query="ctok='..CsrfToken('comment.lua')..'&amp;n='..params.n..(params.id and '&amp;id='..params.id or '')..'"' or '')..'>live</label>\n' or '')..[=[
-<span id="vid-seek" data-initial-ofssec="]=]..math.floor(params.ofssec or 0)..'" data-initial-fast="'..(params.fast and params.fast~=0 and XCODE_FAST_RATES[params.fast] or 1)..[=[">
-<span class="thumb-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
+<span id="vid-seek" data-initial-ofssec="]=]..math.floor((live or not xq.offset) and 0 or xq.offset<0 and -xq.offset or params.fsec*xq.offset/100)
+  ..'" data-initial-fast="'..(xq.fast and xq.fast~=0 and XCODE_FAST_RATES[xq.fast] or 1)..[=[">
+<span id="vid-seek-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
 <canvas style="display:none"></canvas><script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>]=] or '')..[=[
 <div id="vid-seek-status" style="display:none"></div><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
 </span><datalist id="vid-seek-marker"><option></datalist>
@@ -557,9 +589,9 @@ function TranscodeScriptTemplate(live,caption,jikkyo,tslive,params)
 <button id="vid-unmute" class="video-side-item" type="button" style="display:none"]=]
   ..(XCODE_VIDEO_MUTED and ' data-initial-muted="'..(XCODE_VIDEO_MUTED=='auto' and 'auto' or 1)..'"' or '')
   ..(VIDEO_VOLUME and ' data-initial-volume="'..VIDEO_VOLUME..'"' or '')..[=[>🔊</button>
-]=]..((tslive or ALLOW_HLS) and [=[
+]=]..((xq.tslive or ALLOW_HLS) and [=[
 <script type="text/javascript" src="aribb24.js" defer></script>
-]=] or '')..(tslive and [=[
+]=] or '')..(xq.tslive and [=[
 <script type="text/javascript" src="ts-live.lua?t=.js" defer></script>
 ]=] or ALLOW_HLS and ALWAYS_USE_HLS and [=[
 <script type="text/javascript" src="hls.min.js" defer></script>
@@ -1355,6 +1387,88 @@ function TestVttKind(path)
     f:close()
   end
   return r
+end
+
+--pathに対応するチャプターファイルを読み込む
+function LoadAttachedChapters(path)
+  local function parseTvt(src)
+    --BOMの有無にかかわらずUTF-8
+    local r,i={},src:find('^\xef\xbb\xbf[Cc]%-') and 6 or src:find('^[Cc]%-') and 3
+    if not i then return nil end
+    while not src:find('^[Cc]',i) do
+      local pos,c,name=src:match('^([0-9]+)([^0-9-])([^-]*)%-',i)
+      if not pos then return nil end
+      name=name:gsub('[\0-\x1f\x7f]','')
+      if c:find('[Ee]') then
+        --動画の末尾
+        r[#r+1]={pos=math.huge,name=name}
+      elseif c:find('[Dd]') then
+        --単位は100msec
+        r[#r+1]={pos=pos*100,name=name}
+      elseif c:find('[Cc]') then
+        --単位はmsec
+        r[#r+1]={pos=pos*1,name=name}
+      end
+      i=i+#pos+#c+#name+1
+    end
+    return r
+  end
+  local function parseOgm(src)
+    local r={}
+    local bom=src:find('^\xef\xbb\xbf')
+    for s in src:sub(bom and 4 or 1):gmatch('[^\n]+') do
+      s=s:gsub('^[\t\r ]*(.-)[\t\r ]*$','%1')
+      if s:find('^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]') then
+        if #r>0 and r[#r].id and s:find('^'..r[#r].id..'[Nn][Aa][Mm][Ee]=',8) then
+          --"CHAPTER[0-9]*NAME="
+          local name=s:sub(#r[#r].id+13)
+          if name~='' and not bom then
+            --BOMがなければShift_JISと仮定。変換できなければASCII文字だけ抽出
+            local esc=edcb.htmlEscape
+            edcb.htmlEscape=0
+            local conv=edcb.Convert('utf-8','cp932',name) or ''
+            edcb.htmlEscape=esc
+            name=conv=='' and name:gsub('[\x80-\xff]','') or conv
+          end
+          r[#r].name=name:gsub('[\0-\x1f\x7f]','')
+          r[#r].id=nil
+        else
+          --例えば"CHAPTER[0-9]*COMMENT="などは無視する
+          if s:find('^[0-9]*=',8) then
+            r[#r>0 and not r[#r].name and #r or #r+1]={}
+            --"CHAPTER[0-9]*=HH:MM:SS.sss"
+            local id,hh,mm,ss,ms=s:match('^([0-9]*)=([0-9][0-9]):([0-9][0-9]):([0-9][0-9])%.([0-9][0-9][0-9])',8)
+            if id then
+              r[#r].id=id
+              r[#r].pos=((hh*60+mm)*60+ss)*1000+ms
+            end
+          end
+        end
+      elseif s~='' then
+        --空行以外は認めない
+        return nil
+      end
+    end
+    if #r>0 and not r[#r].name then table.remove(r) end
+    return r
+  end
+  for ext in CHAPTER_EXTENSIONS:gmatch('[^|]+') do
+    for i,dir in ipairs(CHAPTERS_FOLDER_NAME=='' and {''} or {'%1'..CHAPTERS_FOLDER_NAME:gsub('%%','%%%%'),''}) do
+      local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
+      if f then
+        local r
+        if ext=='.chapter' then
+          r=parseTvt(f:read('*a') or '')
+        else
+          r=parseOgm(f:read('*a') or '')
+        end
+        f:close()
+        return r
+      end
+    end
+  end
+  --もしあればファイル名から抽出
+  return CHAPTER_EXTENSIONS:find('|@$') and parseTvt(path:match('[^'..DIR_SEPS..']*$'):match('[Cc]%-.*$') or '')
 end
 
 DOCTYPE_HTML4_STRICT='<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'

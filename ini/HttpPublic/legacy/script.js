@@ -1099,6 +1099,13 @@ const runVideoScript=()=>{
   seekVideo=(sec)=>{
     vid.e.currentTime=sec;
   };
+  const vidChapters=document.getElementById("vid-chapters");
+  if(vidChapters){
+    vidChapters.selectedIndex=-1;
+    vidChapters.onchange=()=>{
+      if(vidChapters.selectedIndex>=0)seekVideo(+vidChapters.options[vidChapters.selectedIndex].value);
+    };
+  }
 };
 
 const runTranscodeScript=()=>{
@@ -1403,8 +1410,8 @@ const runTranscodeScript=()=>{
     let thumbXhr=null;
     const rangeSeekSec=n=>{
       const i=Math.floor(n);
-      return Math.floor((vselect.options[Math.min(i+1,100)].dataset.sec||-1)*(n-i)-
-                        (vselect.options[Math.min(i,100)].dataset.sec||-1)*(n-i-1));
+      return Math.floor((vselect.options[vselect.options.length-101+Math.min(i+1,100)].dataset.sec||-1)*(n-i)-
+                        (vselect.options[vselect.options.length-101+Math.min(i,100)].dataset.sec||-1)*(n-i-1));
     };
     const formatSec=sec=>{
       return Math.floor(sec/60)+"m"+String(100+sec%60).substring(1)+"s";
@@ -1417,9 +1424,9 @@ const runTranscodeScript=()=>{
       vstatus.style.display="none";
       vstatus.classList.remove("follow-thumb");
     };
-    const setLeft=()=>{
+    const setLeft=x=>{
       const e=vstatus.classList.contains("follow-thumb")?vthumb:vstatus;
-      const x=(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX)-e.offsetWidth/2;
+      x-=e.offsetWidth/2;
       e.style.left=Math.floor(x)+"px";
       e.style.left=Math.floor(x-Math.min(e.getBoundingClientRect().left,0)-Math.max(e.getBoundingClientRect().right-window.innerWidth,0))+"px";
       vstatus.style.left=e.style.left;
@@ -1430,10 +1437,10 @@ const runTranscodeScript=()=>{
       const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
       vstatus.innerText=formatSec(currentAbsTime())+"\u2192"+
         (rangeSeekSec(n)>=0&&vid.seekWithoutTransition?formatSec(rangeSeekSec(n)):
-           vselect.options[Math.floor(n)].textContent.match(/^(?:\d+m\d+s)?/).m[0])+
+           vselect.options[vselect.options.length-101+Math.floor(n)].textContent.match(/^(?:\d+m\d+s)?/)[0])+
         "|"+Math.floor(n)+"%";
       vstatus.style.display=null;
-      setLeft();
+      setLeft(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX);
       if(vthumb&&vid.grabFirstFrame){
         clearTimeout(thumbTimer);
         thumbTimer=setTimeout(()=>{
@@ -1455,7 +1462,7 @@ const runTranscodeScript=()=>{
                 vthumb.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
                 vthumb.style.display=null;
                 vstatus.classList.add("follow-thumb");
-                setLeft();
+                setLeft(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX);
               }
             }
             thumbXhr=null;
@@ -1469,7 +1476,7 @@ const runTranscodeScript=()=>{
       popup();
     };
     rangeSeek.onchange=()=>{
-      vselect.options[Math.floor(rangeSeek.value)].selected=true;
+      vselect.options[vselect.options.length-101+Math.floor(rangeSeek.value)].selected=true;
       if(rangeSeekSec(rangeSeek.value)>=0&&vid.seekWithoutTransition){
         vid.ofssec=Math.max(rangeSeekSec(rangeSeek.value)-1,0);
         openSubStream();
@@ -1488,14 +1495,46 @@ const runTranscodeScript=()=>{
       const sec=currentAbsTime();
       voffset.innerText="|"+formatSec(sec);
       for(let i=0;;i++){
-        if(i==99||(vselect.options[i].dataset.sec||-1)>=sec){
+        if(i==99||(vselect.options[vselect.options.length-101+i].dataset.sec||-1)>=sec){
           const marker=document.querySelector("#vid-seek-marker option");
           if(vseek.classList.contains("active")){
             marker.value=Math.abs(i-rangeSeek.value)>5?i:null;
           }else{
             marker.value=null;
             rangeSeek.value=i;
-            rangeSeek.style.display=null;
+            if(rangeSeek.style.display=="none"){
+              rangeSeek.style.display=null;
+              const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
+              for(let j=0;j<vselect.options.length-101;j++){
+                const opt=vselect.options[j];
+                const chapter=document.createElement("div");
+                chapter.classList.add("chapter-mark");
+                if(/^[^ ]* [Ii]/.test(opt.textContent))chapter.classList.add("chapter-in");
+                else if(/^[^ ]* [Oo]/.test(opt.textContent))chapter.classList.add("chapter-out");
+                const ratio=opt.dataset.sec/vselect.options[vselect.options.length-1].dataset.sec;
+                chapter.style.left=Math.floor(1000*ratio)/10+"%";
+                chapter.style.transform="translateX(-50%) translateX("+Math.floor(adjustX*(0.5-ratio))+"px)";
+                chapter.onmouseenter=()=>{
+                  vstatus.style.display=null;
+                  vstatus.innerText=opt.textContent;
+                  setLeft(rangeSeek.clientWidth*ratio);
+                };
+                chapter.onmouseleave=()=>{
+                  vstatus.style.display="none";
+                };
+                chapter.onclick=()=>{
+                  opt.selected=true;
+                  if(vid.seekWithoutTransition){
+                    vid.ofssec=Math.max(opt.dataset.sec-1,0);
+                    openSubStream();
+                    vid.seekWithoutTransition();
+                  }else{
+                    document.querySelector('#vid-form button[type="submit"]').click();
+                  }
+                };
+                document.getElementById("vid-seek-popup").appendChild(chapter);
+              }
+            }
           }
           break;
         }

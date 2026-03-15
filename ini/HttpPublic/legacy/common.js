@@ -131,8 +131,8 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
                         var vselect=document.querySelector('#vid-form select[name="offset"]');
                         if(vselect){
                           for(var i=1;;i++){
-                            if(i==100||(vselect.options[i].dataset.sec||-1)>=Math.max(sec-1,0)){
-                              vselect.options[i-1].selected=true;
+                            if(i==100||(vselect.options[vselect.options.length-101+i].dataset.sec||-1)>=Math.max(sec-1,0)){
+                              vselect.options[vselect.options.length-102+i].selected=true;
                               break;
                             }
                           }
