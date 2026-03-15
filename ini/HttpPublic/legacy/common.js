@@ -32,7 +32,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
         return /[\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]/.test(c)?String.fromCharCode(c.charCodeAt(0)-0xfee0):hw[fw.indexOf(c)];
       });
     }
-    function extractReadableText(s,f){
+    function extractReadableText(s,b24,f){
       var ctrl=0;
       var ssz=false;
       for(var i=0;i<s.length;i++){
@@ -48,7 +48,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
           }
           i=s.indexOf(">",i);
           if(i<0)i=s.length-1;
-        }else if(ctrl<=0){
+        }else if(!b24||ctrl<=0){
           //readable
           var j=s.indexOf("<",i);
           if(j<0)j=s.length;
@@ -82,7 +82,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
       if(!cb.checked||dummyVideo)return;
       dummyVideo=document.createElement("video");
       desc.innerText="Loading...";
-      function parseCue(uri,download){
+      function parseCue(uri,b24,download){
         var track=document.createElement("track");
         dummyVideo.appendChild(track);
         track.kind="metadata";
@@ -113,14 +113,14 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
           desc.innerText="";
           desc.parentElement.insertBefore(a,desc);
 
-          var re=/<v b24caption[1-8]>(.*?)<\/v>/g;
+          var re=b24?/<v b24caption[1-8]>(.*?)<\/v>/g:/(.+)/g;
           for(var i=0;i<track.cues.length;i++){
             re.lastIndex=0;
-            var cueText=track.cues[i].text.replace(/\r?\n/g,"");
+            var cueText=track.cues[i].text.replace(/\r?\n/g,b24?"":" ");
             var src;
             while((src=re.exec(cueText))!==null){
               var appended=false;
-              extractReadableText(src[1],function(s,ssz){
+              extractReadableText(src[1],b24,function(s,ssz){
                 if(!appended){
                   appended=true;
                   var sec=track.cues[i].startTime;
@@ -176,7 +176,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
             //Validate
             if(/^WEBVTT\n[\s\S]* --> /.test(s)){
               var m=(xhr.getResponseHeader("Content-Disposition")||"").match(/filename=([0-9A-Za-z_-]+\.vtt)/);
-              parseCue(URL.createObjectURL(new Blob(["\ufeff",s],{endings:"native",type:"text/vtt"})),m?m[1]:"a.vtt");
+              parseCue(URL.createObjectURL(new Blob(["\ufeff",s],{endings:"native",type:"text/vtt"})),true,m?m[1]:"a.vtt");
             }else{
               desc.innerText="";
             }
@@ -200,7 +200,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
         };
         xhr.send();
       }else{
-        parseCue(encodeURIComponent(desc.dataset.vtt).replace(/%2F/g,"/"),"");
+        parseCue(encodeURIComponent(desc.dataset.vtt).replace(/%2F/g,"/"),desc.dataset.vttKind=="metadata","");
       }
     };
   }

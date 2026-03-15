@@ -819,18 +819,14 @@ const runVideoScript=()=>{
       inputFile.parentNode.parentNode.removeChild(inputFile.parentNode);
     };
   }
-  let cap=null;
   const cbCaption=document.getElementById("cb-caption");
-  cbCaption.onclick=()=>{
-    if(cap){if(cbCaption.checked){cap.show();}else{cap.hide();}}
-  };
-  const vidMeta=document.getElementById("vid-meta");
-  if(vidMeta){
-    vidMeta.oncuechange=()=>{
-      vidMeta.oncuechange=null;
+  const vidTrack=document.getElementById("vid-track");
+  if(vidTrack&&vidTrack.kind=="metadata"){
+    vidTrack.oncuechange=()=>{
+      vidTrack.oncuechange=null;
       const work=[];
       const dataList=[];
-      for(const cue of vidMeta.track.cues){
+      for(const cue of vidTrack.track.cues){
         const ret=decodeB24CaptionFromCueText(cue.text,work);
         if(!ret)return;
         for(const pes of ret){dataList.push({pts:cue.startTime,pes});}
@@ -841,16 +837,20 @@ const runVideoScript=()=>{
       }catch(e){
         console.warn("aribb24OptionJson:",e);
       }
+      let cap;
       try{
         cap=cbCaption.dataset.aribb24UseSvg?new aribb24js.SVGRenderer(aribb24Option):new aribb24js.CanvasRenderer(aribb24Option);
         cap.attachMedia(vid.e);
       }catch(e){
-        cap=null;
         console.warn("aribb24js:",e);
         return;
       }
+      cbCaption.onclick=()=>{
+        if(cbCaption.checked)cap.show();
+        else cap.hide();
+      };
       document.getElementById("label-caption").style.display="inline";
-      if(!cbCaption.checked){cap.hide();}
+      if(!cbCaption.checked)cap.hide();
       dataList.reverse();
       const pushCap=()=>{
         for(let i=0;i<100;i++){
@@ -862,6 +862,12 @@ const runVideoScript=()=>{
       };
       pushCap();
     };
+  }else if(vidTrack){
+    cbCaption.onclick=()=>{
+      vidTrack.track.mode=cbCaption.checked?"showing":"hidden";
+    };
+    document.getElementById("label-caption").style.display="inline";
+    if(cbCaption.checked)vidTrack.track.mode="showing";
   }
   const cbDatacast=document.getElementById("cb-datacast");
   if(cbDatacast){

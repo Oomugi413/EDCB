@@ -1347,6 +1347,16 @@ function GetLeNumber(buf,pos,len)
   return n
 end
 
+--WebVTT字幕ファイルの種類を調べる
+function TestVttKind(path)
+  local r,f=nil,edcb.io.open(path,'rb')
+  if f then
+    r=(f:read(1024) or ''):find('^[^>]*b24caption%-2aaf6fcf%-6388%-4e59%-88ff%-46e1555d0edd') and 'metadata' or 'captions'
+    f:close()
+  end
+  return r
+end
+
 DOCTYPE_HTML4_STRICT='<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
 
 --既定のHTMLヘッダの内容
