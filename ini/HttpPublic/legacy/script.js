@@ -1053,7 +1053,7 @@ const runVideoScript=()=>{
       startRead();
       if(xhr)return;
       xhr=new XMLHttpRequest();
-      xhr.open("GET","jklog.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&jkid="+jkID+"&jktm="+jkTM);
+      xhr.open("GET","jklog.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&fsec="+Math.floor(vid.e.duration)+"&jkid="+jkID+"&jktm="+jkTM);
       xhr.onloadend=()=>{
         if(!logText){
           if(onJikkyoStreamError)onJikkyoStreamError(xhr.status,0);
@@ -1085,16 +1085,21 @@ const runVideoScript=()=>{
       };
       xhr.send();
     };
-    const btnConfig=document.querySelector("#jikkyo-config > button");
-    btnConfig.onclick=selectID.onchange=()=>{
-      if(xhr&&xhr.readyState!=4)return;
-      jkID=+(selectID.value||"0");
-      jkTM=inputTM.value?Math.floor(Date.parse(inputTM.value+"Z")/60000)*60+inputTMSec.selectedIndex-32400:0;
-      logText=null;
-      xhr=null;
-      onclickJikkyo();
-    };
-    setTimeout(onclickJikkyo,500);
+    const checkStartTimer=setInterval(()=>{
+      if(vid.e.duration<Infinity){
+        clearInterval(checkStartTimer);
+        const btnConfig=document.querySelector("#jikkyo-config > button");
+        btnConfig.onclick=selectID.onchange=()=>{
+          if(xhr&&xhr.readyState!=4)return;
+          jkID=+(selectID.value||"0");
+          jkTM=inputTM.value?Math.floor(Date.parse(inputTM.value+"Z")/60000)*60+inputTMSec.selectedIndex-32400:0;
+          logText=null;
+          xhr=null;
+          onclickJikkyo();
+        };
+        onclickJikkyo();
+      }
+    },500);
   }
   seekVideo=(sec)=>{
     vid.e.currentTime=sec;
@@ -1509,8 +1514,8 @@ const runTranscodeScript=()=>{
                 const opt=vselect.options[j];
                 const chapter=document.createElement("div");
                 chapter.classList.add("chapter-mark");
-                if(/^[^ ]* [Ii]/.test(opt.textContent))chapter.classList.add("chapter-in");
-                else if(/^[^ ]* [Oo]/.test(opt.textContent))chapter.classList.add("chapter-out");
+                if(opt.dataset.chapterIn)chapter.classList.add("chapter-in");
+                else if(opt.dataset.chapterOut)chapter.classList.add("chapter-out");
                 const ratio=opt.dataset.sec/vselect.options[vselect.options.length-1].dataset.sec;
                 chapter.style.left=Math.floor(1000*ratio)/10+"%";
                 chapter.style.transform="translateX(-50%) translateX("+Math.floor(adjustX*(0.5-ratio))+"px)";

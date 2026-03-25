@@ -381,6 +381,17 @@ CHAPTER_EXTENSIONS='.chapter|.chapters.txt|@'
 CHAPTERS_FOLDER_NAME=''
 --CHAPTERS_FOLDER_NAME='chapters'
 
+--開始チャプターとみなすチャプター名のパターン(Luaの正規表現)
+CHAPTER_IN='^i'
+
+--終了チャプターとみなすチャプター名のパターン(Luaの正規表現)
+CHAPTER_OUT='^o'
+
+--動画の編集位置のカット秒数・ミリ秒数とみなすチャプター名のパターン(Luaの正規表現)
+--例えばエンコード時に60秒カットした動画があるとき、編集位置のチャプター名に"_cut=60s"が含まれていれば実況ログの表示タイミングを自動で60秒ずらす
+CHAPTER_CUT_SEC='_cut=([0-9]+)s'
+CHAPTER_CUT_MSEC='_cut=([0-9]+)ms'
+
 --トランスコードするプロセスを1つだけに制限するかどうか(並列処理できる余裕がシステムにない場合など)
 XCODE_SINGLE=false
 --ログを"log"フォルダに保存するかどうか
@@ -488,7 +499,8 @@ function TranscodeSettingTemplate(xq,forDL,fsec,chapters)
         local sec=math.floor(v.pos/1000<fsec and v.pos/1000 or fsec)
         --便利のため1秒だけ引く
         sel=sel or sec>1 and xq.offset==1-sec and i
-        s=s..'<option value="'..math.min(1-sec,0)..'"'..Selected(sel==i)..' data-sec="'..sec..('">%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
+        s=s..'<option'..(v.name:lower():find(CHAPTER_IN) and ' data-chapter-in="1"' or v.name:lower():find(CHAPTER_OUT) and ' data-chapter-out="1"' or '')
+          ..' value="'..math.min(1-sec,0)..'"'..Selected(sel==i)..' data-sec="'..sec..('">%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
       end
       edcb.htmlEscape=esc
     end
@@ -564,8 +576,8 @@ function VideoScriptTemplate(ists,chapters)
     local esc=edcb.htmlEscape
     edcb.htmlEscape=15
     for i,v in ipairs(chapters) do
-      s=s..'<option '..(v.pos==math.huge and 'disabled value="">END ' or 'value="'..(v.pos/1000)
-                          ..('">%dm%02ds '):format(math.floor(v.pos/60000),math.floor(v.pos/1000)%60))..EdcbHtmlEscape(v.name)
+      s=s..'<option'..(v.name:lower():find(CHAPTER_IN) and ' data-chapter-in="1"' or v.name:lower():find(CHAPTER_OUT) and ' data-chapter-out="1"' or '')
+        ..(v.pos==math.huge and ' disabled value="">END ' or ' value="'..(v.pos/1000)..('">%dm%02ds '):format(math.floor(v.pos/60000),math.floor(v.pos/1000)%60))..EdcbHtmlEscape(v.name)
     end
     edcb.htmlEscape=esc
     s=s..'</select>\n'
@@ -1398,7 +1410,7 @@ function LoadAttachedChapters(path)
     while not src:find('^[Cc]',i) do
       local pos,c,name=src:match('^([0-9]+)([^0-9-])([^-]*)%-',i)
       if not pos then return nil end
-      name=name:gsub('[\0-\x1f\x7f]','')
+      name=name:gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd')
       if c:find('[Ee]') then
         --動画の末尾
         r[#r+1]={pos=math.huge,name=name}
@@ -1411,26 +1423,27 @@ function LoadAttachedChapters(path)
       end
       i=i+#pos+#c+#name+1
     end
+    table.sort(r,CompareFields('pos'))
     return r
   end
   local function parseOgm(src)
     local r={}
-    local bom=src:find('^\xef\xbb\xbf')
-    for s in src:sub(bom and 4 or 1):gmatch('[^\n]+') do
+    --BOMがなければShift_JISと仮定、往復変換できなければUTF-8(化けるかもしれない)
+    if src:find('^\xef\xbb\xbf') then
+      src=src:sub(4)
+    else
+      local esc=edcb.htmlEscape
+      edcb.htmlEscape=0
+      local conv=edcb.Convert('utf-8','cp932',src) or ''
+      src=src==edcb.Convert('cp932','utf-8',conv) and conv or edcb.Convert('utf-8','utf-8',src)
+      edcb.htmlEscape=esc
+    end
+    for s in src:gmatch('[^\n]+') do
       s=s:gsub('^[\t\r ]*(.-)[\t\r ]*$','%1')
       if s:find('^[Cc][Hh][Aa][Pp][Tt][Ee][Rr]') then
         if #r>0 and r[#r].id and s:find('^'..r[#r].id..'[Nn][Aa][Mm][Ee]=',8) then
           --"CHAPTER[0-9]*NAME="
-          local name=s:sub(#r[#r].id+13)
-          if name~='' and not bom then
-            --BOMがなければShift_JISと仮定。変換できなければASCII文字だけ抽出
-            local esc=edcb.htmlEscape
-            edcb.htmlEscape=0
-            local conv=edcb.Convert('utf-8','cp932',name) or ''
-            edcb.htmlEscape=esc
-            name=conv=='' and name:gsub('[\x80-\xff]','') or conv
-          end
-          r[#r].name=name:gsub('[\0-\x1f\x7f]','')
+          r[#r].name=s:sub(#r[#r].id+13):gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd')
           r[#r].id=nil
         else
           --例えば"CHAPTER[0-9]*COMMENT="などは無視する
@@ -1450,20 +1463,16 @@ function LoadAttachedChapters(path)
       end
     end
     if #r>0 and not r[#r].name then table.remove(r) end
+    table.sort(r,CompareFields('pos'))
     return r
   end
   for ext in CHAPTER_EXTENSIONS:gmatch('[^|]+') do
     for i,dir in ipairs(CHAPTERS_FOLDER_NAME=='' and {''} or {'%1'..CHAPTERS_FOLDER_NAME:gsub('%%','%%%%'),''}) do
       local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
       if f then
-        local r
-        if ext=='.chapter' then
-          r=parseTvt(f:read('*a') or '')
-        else
-          r=parseOgm(f:read('*a') or '')
-        end
+        local src=(f:seek('end') or math.huge)<1024*1024 and f:seek('set') and f:read('*a')
         f:close()
-        return r
+        return src and (ext=='.chapter' and parseTvt or parseOgm)(src) or nil
       end
     end
   end
