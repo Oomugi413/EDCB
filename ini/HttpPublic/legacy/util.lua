@@ -374,8 +374,8 @@ JK_CUSTOM_REPLACE_JSON=[=[
 ]
 ]=]
 
---チャプターファイルの拡張子の候補。'.chapter'はTVTestのTvtPlay、ほかはNero/OGM形式とみなす。最終候補が'@'のときはファイル名に含まれるTvtPlay形式を読み込む
-CHAPTER_EXTENSIONS='.chapter|.chapters.txt|@'
+--チャプターファイルの拡張子の候補。.chapterはTVTestのTvtPlay、.m4a.mp4はMP4のテキストトラック、ほかはNero/OGM形式とみなす。最終候補が@のときはファイル名に含まれるTvtPlay形式を読み込む
+CHAPTER_EXTENSIONS='.chapter|.chapters.txt|.m4a|.mp4|@'
 
 --メディアファイルと同じ場所にこの名前のフォルダがあるときチャプターファイルをまずここから探す(''のときメディアファイルと同じ場所のみ)
 CHAPTERS_FOLDER_NAME=''
@@ -1144,8 +1144,7 @@ end
 function GetPcrFromTsPacket(adaptation,buf,i)
   i=i or 1
   --adaptation_field_length and PCR_flag
-  return adaptation>=2 and buf:byte(i+4)>=5 and buf:byte(i+5)%32>15 and
-    ((buf:byte(i+6)*256+buf:byte(i+7))*256+buf:byte(i+8))*256+buf:byte(i+9)
+  return adaptation>=2 and buf:byte(i+4)>=5 and buf:byte(i+5)%32>15 and GetBeNumber(buf,i+6,4)
 end
 
 --PCRまで読む
@@ -1207,7 +1206,7 @@ function GetIFrameVideoStream(f)
         --H.262/264/265 PES
         videoPid=ts.pid
         stream={}
-        pesRemain=buf:byte(pos+4)*256+buf:byte(pos+5)
+        pesRemain=GetBeNumber(buf,pos+4,2)
         headerRemain=buf:byte(pos+8)
         seqState=0
         pos=pos+9
@@ -1339,21 +1338,21 @@ function GetTotAndServiceID(f)
           if ts.pid==0 and pointer+13<=188 and id==0x00 then
             --PAT
             local sectionLen=buf:byte(pointer+2)
-            sid=buf:byte(pointer+8)*256+buf:byte(pointer+9)
+            sid=GetBeNumber(buf,pointer+8,2)
             if sectionLen>=17 and sid==0 then
-              sid=buf:byte(pointer+12)*256+buf:byte(pointer+13)
+              sid=GetBeNumber(buf,pointer+12,2)
             end
             if sectionLen<13 or sid==0 then
               sid=nil
             end
           elseif ts.pid==16 and pointer+4<=188 and id==0x40 then
             --NIT
-            nid=buf:byte(pointer+3)*256+buf:byte(pointer+4)
+            nid=GetBeNumber(buf,pointer+3,2)
           elseif ts.pid==20 and pointer+7<=188 and (id==0x70 or id==0x73) and not tot then
             --TDT,TOT
             local pcr2=ReadToPcr(f,pcrPid)
             if not pcr2 then break end
-            local mjd=buf:byte(pointer+3)*256+buf:byte(pointer+4)
+            local mjd=GetBeNumber(buf,pointer+3,2)
             local h=buf:byte(pointer+5)
             local m=buf:byte(pointer+6)
             local s=buf:byte(pointer+7)
@@ -1384,6 +1383,13 @@ function ReadJikkyoChunk(f)
   return head..payload
 end
 
+--ビッグエンディアンの値を取得する
+function GetBeNumber(buf,pos,len)
+  local n=0
+  for i=pos,pos+len-1 do n=n*256+buf:byte(i) end
+  return n
+end
+
 --リトルエンディアンの値を取得する
 function GetLeNumber(buf,pos,len)
   local n=0
@@ -1399,6 +1405,55 @@ function TestVttKind(path)
     f:close()
   end
   return r
+end
+
+--MP4のBoxの位置を探す
+function FindMP4BoxPosition(f,path,currentBoxPos)
+  local i=tonumber(path:match('^....([0-9]+)'))
+  if not i or currentBoxPos>=0 and not f:seek('set',currentBoxPos) then return nil end
+  repeat
+    local head=f:read(8)
+    if not head or #head~=8 then break end
+    local boxSize=GetBeNumber(head,1,4)
+    if boxSize==1 then
+      --64bit形式
+      head=head..(f:read(8) or '')
+      if #head~=16 then break end
+      boxSize=GetBeNumber(head,9,8)
+    end
+    if boxSize<#head then break end
+    if path:sub(1,4)==head:sub(5,8) then
+      i=i-1
+      if i<0 then
+        if path:find('^....[0-9]+$') then return f:seek(),boxSize-#head end
+        return FindMP4BoxPosition(f,path:match('^....[0-9]+.(.*)$'),-1)
+      end
+    end
+  until not f:seek('cur',boxSize-#head)
+  return nil
+end
+
+--MP4のBoxを読む
+function ReadMP4Box(f,path,currentBoxPos)
+  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
+  if pos and size<1024*1024 then
+    local data=f:read(size)
+    if data and #data==size then return data end
+  end
+  return nil
+end
+
+--MP4のFullBoxを読む
+function ReadMP4FullBox(f,path,currentBoxPos)
+  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
+  if pos and size>=4 and size<1024*1024 then
+    local head=f:read(4)
+    if head and #head==4 then
+      local data=f:read(size-4)
+      if data and #data==size-4 then return data,head:byte(1),GetBeNumber(head,2,3) end
+    end
+  end
+  return nil
 end
 
 --pathに対応するチャプターファイルを読み込む
@@ -1466,13 +1521,122 @@ function LoadAttachedChapters(path)
     table.sort(r,CompareFields('pos'))
     return r
   end
+  local function parseMP4(f)
+    local function parseEntry(data,pos,unit,getter)
+      if #data<pos+3 then return nil end
+      local r,n={},GetBeNumber(data,pos,4)
+      if #data<pos+3+n*unit then return nil end
+      for i=1,n do
+        r[i]=getter(data,pos+4+(i-1)*unit,unit)
+      end
+      return r
+    end
+    local moov=FindMP4BoxPosition(f,'moov0',0)
+    if not moov then return nil end
+    local scale,stbl
+    for i=0,99 do
+      local trak=FindMP4BoxPosition(f,'trak'..i,moov)
+      if not trak then break end
+      local chap=ReadMP4Box(f,'tref0/chap0',trak)
+      if chap and #chap>=4 then
+        local trackID=GetBeNumber(chap,1,4)
+        for j=0,99 do
+          trak=FindMP4BoxPosition(f,'trak'..j,moov)
+          if not trak then break end
+          local tkhd,ver=ReadMP4FullBox(f,'tkhd0',trak)
+          if tkhd and #tkhd>=(ver==1 and 20 or 12) and trackID==GetBeNumber(tkhd,ver==1 and 17 or 9,4) then
+            local mdia=FindMP4BoxPosition(f,'mdia0',trak)
+            if mdia then
+              local mdhd,ver=ReadMP4FullBox(f,'mdhd0',mdia)
+              local hdlr=ReadMP4FullBox(f,'hdlr0',mdia)
+              if mdhd and #mdhd>=(ver==1 and 20 or 12) and hdlr and hdlr:find('^....text') then
+                scale=GetBeNumber(mdhd,ver==1 and 17 or 9,4)
+                stbl=FindMP4BoxPosition(f,'minf0/stbl0',mdia)
+              end
+            end
+            break
+          end
+        end
+        break
+      end
+    end
+    if not stbl or scale==0 then return nil end
+    local stco=ReadMP4FullBox(f,'co640',stbl)
+    stco=stco and parseEntry(stco,1,8,GetBeNumber) or
+      not stco and parseEntry(ReadMP4FullBox(f,'stco0',stbl) or {},1,4,GetBeNumber)
+    local sampleSize
+    local stsz=ReadMP4FullBox(f,'stsz0',stbl)
+    if stsz then
+      sampleSize=#stsz>=8 and GetBeNumber(stsz,1,4) or 0
+      sampleSize=sampleSize>0 and sampleSize
+      stsz=sampleSize and GetBeNumber(stsz,5,4) or parseEntry(stsz,5,4,GetBeNumber)
+    end
+    local stsc=parseEntry(ReadMP4FullBox(f,'stsc0',stbl) or {},1,12,function(data,pos) return {
+      first=GetBeNumber(data,pos,4),samples=GetBeNumber(data,pos+4,4)
+    } end)
+    local stts=parseEntry(ReadMP4FullBox(f,'stts0',stbl) or {},1,8,function(data,pos) return {
+      count=GetBeNumber(data,pos,4),delta=GetBeNumber(data,pos+4,4)
+    } end)
+    local r={}
+    if stco and stsz and (not sampleSize or stsz<256*1024) and stsc and stts then
+      --各サンプルのファイル位置を計算
+      local stso={}
+      for i,v in ipairs(stsc) do
+        if i<#stsc and stsc[i+1].first<=v.first or v.samples==0 then break end
+        for j=v.first,math.min(i<#stsc and stsc[i+1].first-1 or #stco,#stco) do
+          stso[#stso+1]=stco[j]
+          for k=2,v.samples do
+            if #stso>=(sampleSize and stsz or #stsz) then break end
+            stso[#stso+1]=stso[#stso]+(sampleSize or stsz[#stso])
+          end
+        end
+      end
+      if #stso==(sampleSize and stsz or #stsz) then
+        local nsum,pos,j=0,0,1
+        for i=1,math.min(#stso,10000) do
+          if nsum<1024*1024 and f:seek('set',stso[i]) then
+            local n=f:read(2)
+            if n and #n==2 then
+              n=GetBeNumber(n,1,2)
+              local name=2+n<=(sampleSize or stsz[i]) and f:read(n)
+              if name and #name==n then
+                local esc=edcb.htmlEscape
+                edcb.htmlEscape=0
+                --UTF-8のみ対応
+                name=edcb.Convert('utf-8','utf-8',name)==name and name:gsub('[\0-\x1f\x7f]+','\xef\xbf\xbd') or ''
+                edcb.htmlEscape=esc
+                r[#r+1]={pos=math.floor(pos/scale*1000),name=name}
+                nsum=nsum+#name
+              end
+            end
+          end
+          while j<#stts and stts[j].count<i do
+            j=j+1
+            stts[j].count=stts[j].count+stts[j-1].count
+          end
+          if j>#stts or stts[j].count<i then break end
+          pos=pos+stts[j].delta
+        end
+      end
+    end
+    return r
+  end
   for ext in CHAPTER_EXTENSIONS:gmatch('[^|]+') do
     for i,dir in ipairs(CHAPTERS_FOLDER_NAME=='' and {''} or {'%1'..CHAPTERS_FOLDER_NAME:gsub('%%','%%%%'),''}) do
-      local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
-      if f then
-        local src=(f:seek('end') or math.huge)<1024*1024 and f:seek('set') and f:read('*a')
-        f:close()
-        return src and (ext=='.chapter' and parseTvt or parseOgm)(src) or nil
+      if not IsEqualPath(ext,'.m4a') and not IsEqualPath(ext,'.mp4') then
+        local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
+        if f then
+          local src=(f:seek('end') or math.huge)<1024*1024 and f:seek('set') and f:read('*a')
+          f:close()
+          return src and (IsEqualPath(ext,'.chapter') and parseTvt or parseOgm)(src) or nil
+        end
+      elseif dir=='' and #path>#ext and IsEqualPath(path:sub(-#ext),ext) then
+        local f=edcb.io.open(path,'rb')
+        if f then
+          local r=parseMP4(f)
+          f:close()
+          if r then return r end
+        end
       end
     end
   end

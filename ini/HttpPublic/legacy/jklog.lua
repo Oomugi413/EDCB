@@ -101,20 +101,20 @@ function ExtractTotListAndServiceIDFromPsiData(f)
           local psi=dict[code+1]
           if not sid and pid==0 and #psi>=16 then
             -- PAT
-            sid=psi:byte(9)*256+psi:byte(10)
+            sid=GetBeNumber(psi,9,2)
             if #psi>=20 and sid==0 then
-              sid=psi:byte(13)*256+psi:byte(14)
+              sid=GetBeNumber(psi,13,2)
             end
             if sid==0 then
               sid=nil
             end
           elseif not nid and pid==16 and #psi>=5 then
             -- NIT
-            nid=psi:byte(4)*256+psi:byte(5)
+            nid=GetBeNumber(psi,4,2)
           elseif pid==20 and #psi>=8 and currTime>=0 then
             -- TDT,TOT
             local sec=(currTime+0x40000000-initTime)%0x40000000/11250
-            local mjd=psi:byte(4)*256+psi:byte(5)
+            local mjd=GetBeNumber(psi,4,2)
             local h=psi:byte(6)
             local m=psi:byte(7)
             local s=psi:byte(8)
