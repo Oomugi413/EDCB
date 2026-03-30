@@ -138,7 +138,7 @@ bool CMessageManager::Post(int msgID, INT_PTR param1, INT_PTR param2)
 {
 	if( m_initialized && IsProcessingTargetID(msgID) ){
 		lock_recursive_mutex lock(m_queueLock);
-		POST post = { msgID, param1, param2 };
+		POST post = { msgID, false, param1, param2 };
 		m_postQueue.push(post);
 		m_pushEvent.Set();
 		if( m_handleSignal ){
@@ -170,6 +170,7 @@ bool CMessageManager::MessageLoop(bool handleSignal)
 	while( !m_postQueue.empty() ){
 		m_postQueue.pop();
 	}
+	m_postByTimerSet.clear();
 	m_timerList.clear();
 	m_pushEvent.Reset();
 	m_sentEvent.Reset();
@@ -228,8 +229,12 @@ bool CMessageManager::MessageLoop(bool handleSignal)
 			for( auto itr = m_timerList.begin(); itr != m_timerList.end(); ++itr ){
 				DWORD remain = itr->tick + itr->msec - now;
 				if( remain >= 0x80000000 ){
-					POST post2 = { ID_TIMER, itr->timerID, 0 };
-					m_postQueue.push(post2);
+					// キューに複数置いてはいけない
+					if( m_postByTimerSet.count(itr->timerID) == 0 ){
+						m_postByTimerSet.insert(itr->timerID);
+						POST post2 = { ID_TIMER, true, itr->timerID, 0 };
+						m_postQueue.push(post2);
+					}
 					itr->tick = now;
 					remain = itr->msec;
 				}
@@ -239,6 +244,9 @@ bool CMessageManager::MessageLoop(bool handleSignal)
 			if( queueSize > 0 ){
 				post = m_postQueue.front();
 				m_postQueue.pop();
+				if( post.byTimer ){
+					m_postByTimerSet.erase((int)post.param1);
+				}
 				if( queueSize > 1 ){
 					m_pushEvent.Set();
 				}
