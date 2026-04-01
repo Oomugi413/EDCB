@@ -1,5 +1,8 @@
 -- vim:set ft=lua:
 dofile(mg.script_name:gsub('[^\\/]*$','')..'util.lua')
+if USE_LIVEJK then
+  dofile(mg.script_name:gsub('[^\\/]*$','')..'jkconst.lua')
+end
 
 vtag=GetVarInt(mg.request_info.query_string,'vtag') or -1
 
@@ -7,9 +10,7 @@ ct=CreateContentBuilder(GZIP_THRESHOLD_BYTE)
 ct:Append((vtag<=0 and DOCTYPE_HTML4_STRICT or '<!DOCTYPE html>\n')..[=[
 <html lang="ja">
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<meta name="viewport" content="initial-scale=1">
-<link rel="stylesheet" type="text/css" href="default.css">
+]=]..DefaultHeadContents()..[=[
 <title>リスト番組表 - EDCB</title>
 </head>
 <body>
@@ -43,6 +44,15 @@ if sid==0 then
   ct:Append('<div class="nav">\n<ul class="epg-list-list">\n')
   --3時間前までの番組
   pastEvents=edcb.EnumEventInfo(st,{startTime=os.date('!*t',now+(9-3)*3600),durationSecond=3*3600})
+  --並びがネットワーク種別でまとまっているときは見出しをつける
+  nwType={}
+  for i,v in ipairs(st) do
+    if (nwType[NetworkType(v.onid)] or i)~=i then
+      nwType=nil
+      break
+    end
+    nwType[NetworkType(v.onid)]=i+1
+  end
   for i,v in ipairs(st) do
     present=nil
     for j=BinarySearchBound(pastEvents,v,CompareFields('onid',false,'tsid',false,'sid')),#pastEvents do
@@ -60,10 +70,14 @@ if sid==0 then
         end
       end
     end
+    if nwType and nwType~=NetworkType(v.onid) then
+      nwType=NetworkType(v.onid)
+      ct:Append('<li><h2>'..nwType..'</h2></li>\n')
+    end
     ct:Append('<li><a href="epglist.html?id='..v.onid..'-'..v.tsid..'-'..v.sid
       ..'#now"><img alt="" style="max-height:0.8em;width:auto" src="logo.lua?onid='..v.onid..'&amp;sid='..v.sid..'">'..v.service_name..'</a>'
       ..(present and (not present.durationSecond or TimeWithZone(present.startTime)+present.durationSecond>now+9*3600) and present.shortInfo and
-           '<span class="epg-present">'..present.shortInfo.event_name..'</span>' or '')
+           '<span class="epg-present"><span><br>&emsp;</span>'..present.shortInfo.event_name..'</span>' or '')
       ..'</li>\n')
   end
   ct:Append('</ul>\n</div>\n')
@@ -80,8 +94,8 @@ else
   rtComp=CompareFields('eid')
   programReservedStart=BinarySearchBound(rt,{eid=65535},rtComp)
 
-  --前後2週間の番組だけ取得する
-  range={startTime=os.date('!*t',baseTime+(date-14)*24*3600),durationSecond=28*24*3600}
+  --前1+後27日間の番組だけ取得する
+  range={startTime=os.date('!*t',baseTime+(date-1)*24*3600),durationSecond=28*24*3600}
   et=edcb.EnumEventInfo({{onid=onid,tsid=tsid,sid=sid}},range) or {}
   for i,v in ipairs(edcb.EnumEventInfoArchive and edcb.EnumEventInfoArchive({{onid=onid,tsid=tsid,sid=sid}},range) or {}) do
     v.past=true
@@ -147,7 +161,7 @@ else
   end
   ct:Append('</div>\n')
   if date<0 then
-    ct:Append('<div class="page-nav">\n  <a href="epglist.html?id='..onid..'-'..tsid..'-'..sid..'&amp;date='..(date+28)..'">↓↓</a>\n</div>\n')
+    ct:Append('<div class="page-nav">\n  <a href="epglist.html?id='..onid..'-'..tsid..'-'..sid..(date<-28 and '&amp;date='..(date+28) or '')..'">↓↓</a>\n</div>\n')
   end
 end
 
@@ -172,7 +186,7 @@ else
   ct:Append('視聴 →<a href="epglist.html?id='..onid..'-'..tsid..'-'..sid..'&amp;vtag='..(vtag==0 and '-1' or '0')
     ..ConstructTranscodeQueries(xq)
     ..'#footer">'..(vtag==0 and 'Video' or 'DL')..'</a>\n'
-    ..'<form id="vid-form" action="'..(vtag==0 and 'view.lua' or 'epglist.html#footer')..'"><div>\n'
+    ..'<form id="vid-form"'..(vtag<0 and ' class="transit-inplace"' or '')..' action="'..(vtag==0 and 'view.lua' or 'epglist.html#footer')..'"><div>\n'
     ..'<button type="submit">view</button>\n'
     ..'<select name="n">')
   for i=0,3 do
@@ -184,22 +198,22 @@ else
     ct:Append('<option value="'..v.onid..'-'..v.tsid..'-'..v.sid..'"'..Selected(v.onid==onid and v.tsid==tsid and v.sid==sid)..'>'..v.service_name..'\n')
   end
   ct:Append('</select>\n'
-    ..TranscodeSettingTemplate(xq)
+    ..TranscodeSettingTemplate(xq,vtag==0)
     ..(vtag==0 and '<input type="hidden" name="ctok" value="'..CsrfToken('view.lua')..'">\n'
          or '<input type="hidden" name="vtag" value="1">\n')
     ..'</div></form>')
   if vtag==1 then
     src='view.lua?n='..n..'&amp;id='..onid..'-'..tsid..'-'..sid..ConstructTranscodeQueries(xq)..'&amp;ctok='..CsrfToken('view.lua')
     ct:Append('\n'..VideoWrapperBegin()
-      ..(xq.tslive and '<canvas id="video"></canvas>' or
-           '<video id="video" autoplay playsinline controls'..(ALLOW_HLS and '' or ' src="'..src..'"')..'>view</video>')
-      ..VideoWrapperEnd()..'\n'
-      ..'<div id="vidsrc" style="display:none">'..src..'</div>\n'..TranscodeScriptTemplate(true,xq.caption,xq.jikkyo,{n=n,id=onid..'-'..tsid..'-'..sid}))
-    if xq.tslive then
-      ct:Append(TsliveScriptTemplate())
-    elseif ALLOW_HLS then
-      ct:Append(HlsScriptTemplate('view.lua'))
-    end
+      ..(xq.tslive and '<canvas id="video" data-src="'..src..'"'..(xq.autoCinema and ' data-initial-auto-cinema="1"' or '')
+                         ..(xq.deinterlace and ' data-deinterlace="'..xq.deinterlace..'"' or '')..'></canvas>' or
+           '<video id="video" autoplay playsinline controls'..(xq.poster and ' data-poster="'..EdcbHtmlEscape(xq.poster)..'"' or '')
+             ..(ALLOW_HLS and (ALWAYS_USE_HLS and ' data-always-use-hls="1"' or '')
+                  ..' data-ctok="'..CsrfToken('view.lua')..'"'
+                  ..' data-hls="'..(edcb.CreateRandom and edcb.CreateRandom(8) or os.time()%86400)..'"'
+                  ..(USE_MP4_HLS and ' data-hls-mp4="'..(USE_MP4_LLHLS and '2' or '1')..'"' or '')
+                  ..' data-' or ' ')..'src="'..src..'">view</video>')
+      ..VideoWrapperEnd(USE_LIVEJK and GetChatStreamNameList())..'\n'..TranscodeScriptTemplate(true,xq,{n=n,id=onid..'-'..tsid..'-'..sid}))
   end
 end
 ct:Append([=[
@@ -208,45 +222,6 @@ ct:Append([=[
 <div id="footer">
   <a href="]=]..(sid==0 and 'index.html">メニュー' or 'epglist.html">サービスリスト')..[=[</a>
 </div>
-]=]
-  --現在の番組名を動的に追記
-  ..(sid~=0 and [=[
-<script type="text/javascript">
-(function(){
-  var initTexts=null;
-  var lastChecked=null;
-  var sel=document.querySelector("select[name=id]");
-  sel.onclick=function(){
-    if(lastChecked&&Math.abs(Date.now()-lastChecked)<30000)return;
-    lastChecked=Date.now();
-    var xhr=new XMLHttpRequest();
-    xhr.open("GET","epglist.html");
-    xhr.onload=function(){
-      if(xhr.status!=200||!xhr.response)return;
-      var optionsDict={};
-      for(var i=0;i<sel.options.length;i++){
-        optionsDict[sel.options[i].value]=sel.options[i];
-      }
-      if(!initTexts){
-        initTexts={};
-        for(var i=0;i<sel.options.length;i++){
-          initTexts[sel.options[i].value]=sel.options[i].innerHTML;
-        }
-        sel.style.width=sel.offsetWidth+"px";
-      }
-      var re=/<a href="epglist\.html\?id=(\d+-\d+-\d+).*?<\/a><span[^>]*>([^<>]*)<\/span>/g;
-      var m;
-      while(m=re.exec(xhr.response)){
-        if(m[1] in initTexts){
-          optionsDict[m[1]].innerHTML=initTexts[m[1]]+"- "+m[2];
-        }
-      }
-    };
-    xhr.send();
-  };
-})();
-</script>
-]=] or '')..[=[
 </body>
 </html>
 ]=])
