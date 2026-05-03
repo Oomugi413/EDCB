@@ -255,24 +255,7 @@ namespace EpgTimer
 
         private void button_save_program_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new Microsoft.Win32.SaveFileDialog();
-            dlg.DefaultExt = ".txt";
-            dlg.FileName = "a.program.txt";
-            dlg.Filter = "txt Files|*.txt|all Files|*.*";
-            if (dlg.ShowDialog() == true)
-            {
-                try
-                {
-                    using (var file = new StreamWriter(dlg.FileName, false, Encoding.UTF8))
-                    {
-                        file.Write(pgInfoForProgramText);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.ToString());
-                }
-            }
+            CommonManager.Instance.ShowSaveProgramTextDialog(pgInfoForProgramText);
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

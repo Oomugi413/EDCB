@@ -117,27 +117,11 @@ namespace EpgTimer
 
         private void button_save_program_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new Microsoft.Win32.SaveFileDialog();
-            dlg.DefaultExt = ".txt";
-            dlg.FileName = "a.program.txt";
-            dlg.Filter = "txt Files|*.txt|all Files|*.*";
-            if (dlg.ShowDialog() == true)
-            {
-                try
-                {
-                    using (var file = new StreamWriter(dlg.FileName, false, Encoding.UTF8))
-                    {
-                        file.Write(CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicInfoForProgramText));
-                        file.Write(CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicTextForProgramText));
-                        file.Write(CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.ExtendedTextForProgramText));
-                        file.Write(CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.PropertyInfo));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.ToString());
-                }
-            }
+            CommonManager.Instance.ShowSaveProgramTextDialog(
+                CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicInfoForProgramText) +
+                CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicTextForProgramText) +
+                CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.ExtendedTextForProgramText) +
+                CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.PropertyInfo));
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

@@ -1015,5 +1015,39 @@ namespace EpgTimer
                 MessageBox.Show(ex.ToString());
             }
         }
+
+        private string saveProgramTextDirectory;
+
+        public void ShowSaveProgramTextDialog(string text)
+        {
+            var dlg = new Microsoft.Win32.SaveFileDialog();
+            string fileName = "a.program.txt";
+            if (saveProgramTextDirectory != null)
+            {
+                dlg.InitialDirectory = saveProgramTextDirectory;
+                for (int i = 1; File.Exists(Path.Combine(saveProgramTextDirectory, fileName)); i++)
+                {
+                    fileName = "a(" + i + ").program.txt";
+                }
+            }
+            dlg.DefaultExt = ".txt";
+            dlg.FileName = fileName;
+            dlg.Filter = "txt Files|*.txt|all Files|*.*";
+            if (dlg.ShowDialog() == true)
+            {
+                try
+                {
+                    using (var file = new StreamWriter(dlg.FileName, false, Encoding.UTF8))
+                    {
+                        file.Write(text);
+                    }
+                    saveProgramTextDirectory = Path.GetDirectoryName(dlg.FileName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.ToString());
+                }
+            }
+        }
     }
 }
