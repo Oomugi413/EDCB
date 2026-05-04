@@ -13,7 +13,7 @@ ct:Append(DOCTYPE_HTML4_STRICT..[=[
 ]=])
 
 tab=GetVarInt(mg.request_info.query_string,'tab',0,4) or 0
-cust=GetVarInt(mg.request_info.query_string,'cust',0,1) or 1
+cust=GetVarInt(mg.request_info.query_string,'cust',0,9) or 1
 date=GetVarInt(mg.request_info.query_string,'date',-10000,1000) or 0
 --dateクエリは今日(深夜4時区切り)を基準(=0)とする
 now=os.time()
@@ -35,34 +35,31 @@ rtComp=CompareFields('onid',false,'tsid',false,'sid',false,'eid')
 
 showServices={}
 for i,v in ipairs(SelectChDataList(edcb.GetChDataList())) do
-  if tab==0 and NetworkType(v.onid)=='地デジ' or
-     tab==1 and NetworkType(v.onid)=='BS' or
-     tab==2 and NetworkType(v.onid):find('^CS[12]') or
-     tab==3 and NetworkType(v.onid)=='CS3' or
-     tab==4 and NetworkType(v.onid)=='その他' then
+  if tab==(({['地デジ']=0,['BS']=1,['CS3']=3,['その他']=4})[NetworkType(v.onid)] or 2) then
     showServices[v.onid..'-'..v.tsid..'-'..v.sid]=1
   end
 end
 
-if cust~=0 then
-  for i,v in ipairs(edcb.EnumAutoAdd()) do
-    if v.searchInfo.notKey:find('^#EPG_CUST_'..cust) or
-       v.searchInfo.notKey:find('^:note:#EPG_CUST_'..cust) then
-      key=v.searchInfo
-      key.andKey=key.andKey:gsub('^^!{999}','')
-      i=1
-      while i<=#key.serviceList do
-        if showServices[key.serviceList[i].onid..'-'..key.serviceList[i].tsid..'-'..key.serviceList[i].sid]==1 then
-          --サービス絞り込みにあるものは表示
-          showServices[key.serviceList[i].onid..'-'..key.serviceList[i].tsid..'-'..key.serviceList[i].sid]=2
-          i=i+1
-        else
-          --表示されないので検索対象から除外
-          table.remove(key.serviceList,i)
-        end
-      end
-      break
+custKeys={}
+for i,v in ipairs(edcb.EnumAutoAdd()) do
+  if v.searchInfo.notKey:find('^:note:#EPG_CUST_[1-9]') then
+    custKeys[0+v.searchInfo.notKey:sub(17,17)]=v.searchInfo
+  end
+end
+key=custKeys[cust]
+if key then
+  key.andKey=key.andKey:gsub('^^!{999}','')
+  j=0
+  for i,v in ipairs(key.serviceList) do
+    --サービス絞り込みにあるものは表示。ほかは検索対象から除外
+    if showServices[v.onid..'-'..v.tsid..'-'..v.sid]==1 then
+      showServices[v.onid..'-'..v.tsid..'-'..v.sid]=2
+      j=j+1
+      key.serviceList[j]=v
     end
+  end
+  while #key.serviceList>j do
+    table.remove(key.serviceList)
   end
 end
 
@@ -123,10 +120,12 @@ for i,v in ipairs({'地デジ','BS','CS','CS3','その他'}) do
          '<a href="epg.html?tab='..(i-1)..'&amp;cust='..cust..'&amp;date='..date..'">'..v..'</a>\n')
 end
 pageNav=pageNav..'  ||\n'
-for i,v in ipairs({'すべて','カスタム'}) do
-  pageNav=pageNav..'  '
-    ..(cust==i-1 and '<span class="epg-nav-sel">'..v..'</span>\n' or
-         '<a href="epg.html?tab='..tab..'&amp;cust='..(i-1)..'&amp;date='..date..'">'..v..'</a>\n')
+for i=0,9 do
+  if i<=1 or custKeys[i] then
+    pageNav=pageNav..'  '
+      ..(cust==i and '<span class="epg-nav-sel">'..(i==0 and 'すべて' or 'カスタム'..(i==1 and '' or i))..'</span>\n' or
+           '<a href="epg.html?tab='..tab..'&amp;cust='..i..'&amp;date='..date..'">'..(i==0 and 'すべて' or 'カスタム'..(i==1 and '' or i))..'</a>\n')
+  end
 end
 pageNav=pageNav..'  ||\n'
   ..'  <a href="#noon">昼</a>\n'
@@ -144,7 +143,7 @@ if minTime then
       ..(pageNav2=='' and d.month..'/' or '')..('%02d'):format(d.day)..({'日','月','火','水','木','金','土'})[d.wday]
       ..(i-baseDate==date and '</span>\n' or '</a>\n')
   end
-  pageNav2='<div class="page-nav">\n'..pageNav2..'</div>\n'
+  pageNav2='<div class="page-nav">\n'..pageNav2..'  <small>'..os.date('!%Y',baseTime+date*24*3600)..'</small>\n</div>\n'
 end
 
 rowHead=''

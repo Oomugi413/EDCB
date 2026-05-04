@@ -252,7 +252,8 @@ ct:Append([=[
 </div>
 <div id="footer">
   ]=]..(fromepg and fromepg>1 and '<a href="autoaddepginfo.html?id='..(fromepg-1)..'#search">EPG予約</a> ' or '')..[=[
-<a href="reserve.html]=]..(r and '?id='..r.reserveID or '')..[=[">予約一覧</a> <a href="epg.html?date=]=]..epgDate..[=[">番組表</a> <a href="epglist.html]=]
+<a href="reserve.html]=]..(r and '?id='..r.reserveID or '')..[=[">予約一覧</a> <a href="epg.html?tab=]=]
+  ..((r or rdel) and (({['地デジ']=0,['BS']=1,['CS3']=3,['その他']=4})[NetworkType((r or rdel).onid)] or 2) or 0)..'&amp;date='..epgDate..[=[">番組表</a> <a href="epglist.html]=]
   ..((r or rdel) and '?id='..(r or rdel).onid..'-'..(r or rdel).tsid..'-'..(r or rdel).sid..'#now' or '')..[=[">リスト番組表</a>
 </div>
 ]=])
