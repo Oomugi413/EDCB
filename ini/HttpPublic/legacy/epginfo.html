@@ -67,6 +67,7 @@ ct:Append(DOCTYPE_HTML4_STRICT..[=[
 
 onid,tsid,sid,eid=GetVarEventID(mg.request_info.query_string,'id')
 presetID=GetVarInt(mg.request_info.query_string,'presetID') or 65535
+fromepg=GetVarInt(mg.request_info.query_string,'fromepg',2) or 1
 
 post=AssertPost()
 if post then
@@ -99,7 +100,7 @@ ct:Append('  <dl>\n'
 if r then
   dur=r.startTime.hour*3600+r.startTime.min*60+r.startTime.sec+r.durationSecond
   ct:Append('    <dt>プログラム予約化（プログラム予約化は元に戻せません。番組を特定できなくなるため追従もできません。）</dt><dd>\n'
-    ..'<form method="POST" action="reserveinfo.html?id='..r.reserveID..'&amp;fromepg=1'
+    ..'<form method="POST" action="reserveinfo.html?id='..r.reserveID..'&amp;fromepg='..fromepg
     ..'"><div><input type="hidden" name="ctok" value="'..CsrfToken('reserveinfo.html')..'">\n'
     ..'<input type="hidden" name="addchg" value="y">\n'
     ..'予約日時: <input type="text" size="4" name="start-y" value="'..r.startTime.year
@@ -115,8 +116,10 @@ if r then
     ..'<button type="submit">変更</button></div></form></dd>\n')
 end
 ct:Append('    <dt>プリセット<dt><dd>\n'
-  ..'<form action="epginfo.html"><div>'
-  ..'<input type="hidden" name="id" value="'..onid..'-'..tsid..'-'..sid..'-'..eid..'"><select name="presetID">\n')
+  ..'<form action="epginfo.html"><div>\n'
+  ..'<input type="hidden" name="id" value="'..onid..'-'..tsid..'-'..sid..'-'..eid..'">\n'
+  ..(fromepg>1 and '<input type="hidden" name="fromepg" value="'..fromepg..'">\n' or '')
+  ..'<select name="presetID">\n')
 preset=false
 rs=r and r.recSetting or nil
 for i,v in ipairs(edcb.EnumRecPresetInfo()) do
@@ -135,14 +138,14 @@ end
 ct:Append('</select> <button type="submit">録画設定にロード</button></div></form></dd>\n'
   ..'    <dt>録画設定<dt><dd>\n'
   ..'<form method="POST" action="'
-  ..(r and 'reserveinfo.html?id='..r.reserveID..'&amp;fromepg=1' or 'epginfo.html?id='..onid..'-'..tsid..'-'..sid..'-'..eid)
+  ..(r and 'reserveinfo.html?id='..r.reserveID..'&amp;fromepg='..fromepg or 'epginfo.html?id='..onid..'-'..tsid..'-'..sid..'-'..eid)..(fromepg>1 and '&amp;fromepg='..fromepg or '')
   ..'"><div><input type="hidden" name="presetID" value="'..(preset and presetID or 65535)..'">\n'
   ..'<input type="hidden" name="ctok" value="'..CsrfToken(r and 'reserveinfo.html')..'">\n'
   ..'<input type="hidden" name="addchg" value="y">\n'
   ..RecSettingTemplate(rs)..'<button type="submit">'..(r and '変更' or '追加')..'</button></div></form></dd>\n')
 if r then
   ct:Append('    <dt>-</dt><dd>\n'
-    ..'<form method="POST" action="reserveinfo.html?id='..r.reserveID..'"><div>\n'
+    ..'<form method="POST" action="reserveinfo.html?id='..r.reserveID..'&amp;fromepg='..fromepg..'"><div>\n'
     ..'<input type="hidden" name="ctok" value="'..CsrfToken('reserveinfo.html')..'">\n'
     ..'<input type="hidden" name="del" value="y">\n'
     ..'<button type="submit">削除</button></div></form></dd>\n')
@@ -152,7 +155,8 @@ ct:Append([=[
   </dl>
 </div>
 <div id="footer">
-  <a href="epg.html?date=]=]..epgDate..[=[">番組表</a> <a href="epglist.html?id=]=]..onid..'-'..tsid..'-'..sid..[=[#now">リスト番組表</a>
+  ]=]..(fromepg>1 and '<a href="autoaddepginfo.html?id='..(fromepg-1)..'#search">EPG予約</a> ' or '')..[=[
+<a href="epg.html?date=]=]..epgDate..[=[">番組表</a> <a href="epglist.html?id=]=]..onid..'-'..tsid..'-'..sid..[=[#now">リスト番組表</a>
 </div>
 </body>
 </html>
