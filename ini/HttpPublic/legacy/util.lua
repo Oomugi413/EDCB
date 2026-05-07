@@ -1124,6 +1124,9 @@ function CompareFields(...)
   return comp
 end
 
+--時間テーブルを比較する
+CompareTime=CompareFields('year',false,'month',false,'day',false,'hour',false,'min',false,'sec')
+
 --符号なし整数の時計算の差を計算する
 function UintCounterDiff(a,b)
   return (a+0x100000000-b)%0x100000000

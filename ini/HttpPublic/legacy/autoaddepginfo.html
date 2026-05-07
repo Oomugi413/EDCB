@@ -305,7 +305,7 @@ if aa.searchInfo then
           et[#et+1]=v
         end
       end
-      table.sort(et,function(a,b) return os.time(a.startTime)<os.time(b.startTime) end)
+      table.sort(et,function(a,b) return CompareTime(a.startTime,b.startTime) end)
       pageCount=AUTOADDEPGINFO_PAGE_COUNT
       page=GetVarInt(mg.request_info.query_string,'page',0,(#et-1)/pageCount) or 0
       pageNav=''

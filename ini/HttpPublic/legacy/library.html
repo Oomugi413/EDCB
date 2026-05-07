@@ -114,9 +114,9 @@ else
       end
     end
     if so=='da' then
-      table.sort(ff,function(a,b) return os.time(a.mtime)<os.time(b.mtime) end)
+      table.sort(ff,function(a,b) return CompareTime(a.mtime,b.mtime) end)
     elseif so=='dd' then
-      table.sort(ff,function(a,b) return os.time(a.mtime)>os.time(b.mtime) end)
+      table.sort(ff,function(a,b) return CompareTime(b.mtime,a.mtime) end)
     elseif so=='sa' then
       table.sort(ff,function(a,b) return a.size<b.size end)
     elseif so=='sd' then

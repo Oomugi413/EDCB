@@ -104,11 +104,8 @@ end
 thumbs={''}
 recFilePath=edcb.GetRecFilePath(id)
 edcb.htmlEscape=15
-epgDate=0
 r=edcb.GetReserveData(id)
 if r then
-  --番組表のdateクエリは今日(深夜4時区切り)を基準(=0)とする
-  epgDate=math.floor((TimeWithZone(r.startTime)-4*3600)/(24*3600))-math.floor((os.time()+(9-4)*3600)/(24*3600))
   epgInfo=ConvertProgramText(edcb.SearchEpg(r.onid,r.tsid,r.sid,r.eid))
   dur=r.startTime.hour*3600+r.startTime.min*60+r.startTime.sec+r.durationSecond
   ct:Append('  <dl>\n'
@@ -247,6 +244,9 @@ if r then
   ct:Append('<button type="submit">削除</button></div></form></dd>\n'
     ..'  </dl>\n')
 end
+
+--番組表のdateクエリは今日(深夜4時区切り)を基準(=0)とする
+epgDate=(r or rdel) and math.floor((TimeWithZone((r or rdel).startTime)-4*3600)/(24*3600))-math.floor((os.time()+(9-4)*3600)/(24*3600)) or 0
 
 ct:Append([=[
 </div>

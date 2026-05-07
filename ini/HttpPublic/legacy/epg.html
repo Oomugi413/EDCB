@@ -22,10 +22,9 @@ baseDate=math.floor((now+(9-4)*3600)/(24*3600))
 baseTime=(baseDate*24+4)*3600
 
 rt={}
-for i,v in ipairs(edcb.GetReserveData()) do
+for i,v in ipairs(date>-2 and edcb.GetReserveData() or {}) do
   --プログラム予約は表示範囲のみ
-  v.startTime=TimeWithZone(v.startTime)
-  if v.eid~=65535 or (baseTime+date*24*3600<=v.startTime and v.startTime<baseTime+(date*24+25)*3600) then
+  if v.eid~=65535 or (baseTime+date*24*3600<=TimeWithZone(v.startTime) and TimeWithZone(v.startTime)<baseTime+(date*24+25)*3600) then
     rt[#rt+1]=v
   end
 end
@@ -108,7 +107,7 @@ for i,v in ipairs(st) do
       v.et[#v.et+1]=w
     end
   end
-  table.sort(v.et, function(a,b) return os.time(a.startTime)<os.time(b.startTime) end)
+  table.sort(v.et,function(a,b) return CompareTime(a.startTime,b.startTime) end)
 end
 
 SortServiceListInplace(st)
@@ -230,10 +229,10 @@ for i,v in ipairs(st) do
           ..'" style="height:'..(endPx-lastPx)..'px;left:'..left..'px;top:'..(lastPx+1)..'px;width:'..width..'px">')
         if not w.past then
           --範囲内のプログラム予約
-          rangeStart=j>1 and startTime
-          rangeEnd=j<#v.et and TimeWithZone(v.et[j+1].startTime)
+          rangeStart=j>1 and w.startTime
+          rangeEnd=j<#v.et and v.et[j+1].startTime
           for k=programReservedStart,programReservedEnd-1 do
-            if (not rangeStart or rangeStart<=rt[k].startTime) and (not rangeEnd or rt[k].startTime<rangeEnd) then
+            if (not rangeStart or not CompareTime(rt[k].startTime,rangeStart)) and (not rangeEnd or CompareTime(rt[k].startTime,rangeEnd)) then
               ct:Append('<span class="lavel-'..(rt[k].recSetting.recMode==5 and 'disabled' or rt[k].recSetting.recMode==4 and 'view' or 'reserved')..'"><a href="reserveinfo.html?id='..rt[k].reserveID..'&amp;fromepg=1">プ予</a></span> ')
             end
           end
