@@ -30,9 +30,18 @@ end
 
 edcb.htmlEscape=15
 a=edcb.GetReserveData()
+aComp=CompareFields('reserveID')
 if not focus then
   focus=GetVarInt(mg.request_info.query_string,'id')
-  focus=focus and BinarySearch(a,{reserveID=focus},CompareFields('reserveID'))
+  focus=focus and BinarySearch(a,{reserveID=focus},aComp)
+end
+
+for i,v in ipairs(edcb.GetTunerReserveAll()) do
+  v.tunerName=v.tunerName:gsub('(.)%.[0-9A-Za-z]+$','%1')
+  v.tunerName=v.tunerName:sub(#v.tunerName>9 and IsEqualPath(v.tunerName:sub(1,9),'BonDriver') and 10 or 1)
+  for j,w in ipairs(v.reserveList) do
+    (BinarySearch(a,{reserveID=w},aComp) or {}).tunerName=v.tunerName
+  end
 end
 
 table.sort(a,function(a,b) return CompareTime(a.startTime,b.startTime) end)
@@ -85,7 +94,8 @@ for i=page*pageCount+1,math.min(#a,(page+1)*pageCount) do
     ..'</a><td'..cl..'>'..v.stationName..'<td'..cl..'>'..v.title
     ..'<td'..cl..'>'..(RecModeTextList()[(v.recSetting.recMode~=5 and v.recSetting.recMode or v.recSetting.noRecMode or 1)+1] or '')
     ..'<td'..cl..'>'..v.recSetting.priority
-    ..'<td'..cl..'>'..(size and ('%.1fG'):format(size/1024/1024/1024) or '')..'</tr>\n')
+    ..'<td'..cl..'>'..(size and ('%.1fG'):format(size/1024/1024/1024) or '')
+    ..'<td'..cl..' style="word-break:break-all">'..(v.tunerName or '')..'</tr>\n')
 end
 
 ct:Append([=[

@@ -613,7 +613,7 @@ end
 
 function ThumbnailTemplate(f,dur,fsize,fname)
   --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
-  local r={'<div id="vid-thumbs" class="thumbs-'..math.min(#THUMBNAILS,5)..'"'..(fname and ' data-fname="'..fname..'"' or '')..'></div>',[=[
+  local r={'<div id="vid-thumbs" class="thumbs-'..math.min(#THUMBNAILS,5)..'"'..(fname and ' data-fname="'..fname..'"' or '')..'>',[=[
 <script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>
 <script type="application/json" id="vid-thumb-streams">
 [
@@ -624,12 +624,14 @@ function ThumbnailTemplate(f,dur,fsize,fname)
       --Iフレームを取得してスクリプト上に置いておく
       local stream=GetIFrameVideoStream(f)
       if stream then
+        r[1]=r[1]..'<span class="thumb-placeholder"></span>'
         r[#r+1]=mg.base64_encode(stream)
         r[#r+1]='",'..sec..'],\n  ["'
       end
     end
   end
   if #r<=2 then return {''} end
+  r[1]=r[1]..'</div>'
   r[#r]=r[#r]:gsub('].*','')..[=[]
 ]
 </script>
@@ -1657,7 +1659,7 @@ function DefaultHeadContents()
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
-<script type="text/javascript" src="common.js?ver=20260305" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
+<script type="text/javascript" src="common.js?ver=20260507" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
 <link rel="stylesheet" type="text/css" href="default.css">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')

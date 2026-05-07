@@ -75,7 +75,7 @@ if sid==0 then
       ct:Append('<li><h2>'..nwType..'</h2></li>\n')
     end
     ct:Append('<li><a href="epglist.html?id='..v.onid..'-'..v.tsid..'-'..v.sid
-      ..'#now"><img alt="" style="max-height:0.8em;width:auto" src="logo.lua?onid='..v.onid..'&amp;sid='..v.sid..'">'..v.service_name..'</a>'
+      ..'#now"><img class="logo" alt="" src="logo.lua?onid='..v.onid..'&amp;sid='..v.sid..'">'..v.service_name..'</a>'
       ..(present and (not present.durationSecond or TimeWithZone(present.startTime)+present.durationSecond>now+9*3600) and present.shortInfo and
            '<span class="epg-present"><span><br>&emsp;</span>'..present.shortInfo.event_name..'</span>' or '')
       ..'</li>\n')
