@@ -172,6 +172,11 @@ BOOL WritePrivateProfileInt(LPCWSTR appName, LPCWSTR keyName, int value, LPCWSTR
 
 struct UTIL_FIND_DATA {
 	bool isDir;
+#ifdef _WIN32
+	bool readonly;
+	bool hidden;
+	bool system;
+#endif
 	LONGLONG lastWriteTime;
 	LONGLONG fileSize;
 	wstring fileName;

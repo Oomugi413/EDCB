@@ -4327,6 +4327,11 @@ int CEpgTimerSrvMain::LuaFindFile(lua_State* L)
 				LuaHelp::reg_string(ws.L, "name", ws.WtoUTF8(findData.fileName));
 				LuaHelp::reg_number(ws.L, "size", (double)findData.fileSize);
 				LuaHelp::reg_boolean(ws.L, "isdir", findData.isDir);
+#ifdef _WIN32
+				LuaHelp::reg_boolean(ws.L, "readonly", findData.readonly);
+				LuaHelp::reg_boolean(ws.L, "hidden", findData.hidden);
+				LuaHelp::reg_boolean(ws.L, "system", findData.system);
+#endif
 				SYSTEMTIME st;
 				ConvertSystemTime(findData.lastWriteTime + I64_UTIL_TIMEZONE, &st);
 				LuaHelp::reg_time(ws.L, "mtime", st);
