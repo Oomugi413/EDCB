@@ -1630,7 +1630,7 @@ const runHlsScript=()=>{
       "&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
       "ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
       if(Hls.isSupported()){
-        const hls=new Hls();
+        const hls=new Hls({workerPath:"hls.worker.js"});
         hls.loadSource(src);
         hls.attachMedia(vid.e);
         hls.on(Hls.Events.MANIFEST_PARSED,()=>{vid.e.play();});
