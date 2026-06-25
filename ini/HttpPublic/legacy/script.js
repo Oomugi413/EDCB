@@ -117,41 +117,60 @@ const readPsiData=(data,proc,startSec,ctx)=>{
   return ret;
 };
 
-const progressPsiDataChatMixedStream=(readCount,response,onData,onChat,ctx)=>{
-  ctx=ctx||{};
-  if(!ctx.ctx){
-    ctx.ctx={};
-    ctx.atobRemain="";
-    ctx.psiData=new Uint8Array(0);
-  }
-  while(readCount<response.length){
-    let i=response.indexOf("<",readCount);
-    if(i==readCount){
-      i=response.indexOf("\n",readCount);
-      if(i<0)break;
-      if(onChat)onChat(response.substring(readCount,i));
-      readCount=i+1;
-    }else{
-      i=i<0?response.length:i;
-      const n=Math.floor((i-readCount+ctx.atobRemain.length)/4)*4;
-      if(n){
-        const addData=atob(ctx.atobRemain+response.substring(readCount,readCount+n-ctx.atobRemain.length));
-        ctx.atobRemain=response.substring(readCount+n-ctx.atobRemain.length,i);
-        const concatData=new Uint8Array(ctx.psiData.length+addData.length);
-        for(let j=0;j<ctx.psiData.length;j++)concatData[j]=ctx.psiData[j];
-        for(let j=0;j<addData.length;j++)concatData[ctx.psiData.length+j]=addData.charCodeAt(j);
-        ctx.psiData=readPsiData(concatData.buffer,(sec,dict,code,pid)=>{
-          if(onData)onData(pid,dict,code,Math.floor(sec*90000));
-          return true;
-        },0,ctx.ctx);
-        if(ctx.psiData)ctx.psiData=new Uint8Array(ctx.psiData);
-      }else{
-        ctx.atobRemain+=response.substring(readCount,i);
-      }
-      readCount=i;
-    }
-  }
-  return readCount;
+const progressPsiDataChatMixedStream=(reader,onData,onChat)=>{
+  return new Promise((resolve,reject)=>{
+    let readCount=0;
+    let response="";
+    const ctx={};
+    let atobRemain="";
+    let psiData=new Uint8Array(0);
+    const decoder=new TextDecoder();
+    const readNext=()=>{
+      reader.read().then(r=>{
+        if(r.done){
+          if(readCount)resolve(readCount);
+          else reject("Error: Empty stream");
+          return;
+        }
+        response+=decoder.decode(r.value,{stream:true});
+        let offset=0;
+        while(offset<response.length){
+          let i=response.indexOf("<",offset);
+          if(i==offset){
+            i=response.indexOf("\n",offset);
+            if(i<0)break;
+            if(onChat)onChat(response.substring(offset,i));
+            offset=i+1;
+          }else{
+            i=i<0?response.length:i;
+            const n=Math.floor((i-offset+atobRemain.length)/4)*4;
+            if(n){
+              const addData=atob(atobRemain+response.substring(offset,offset+n-atobRemain.length));
+              atobRemain=response.substring(offset+n-atobRemain.length,i);
+              const concatData=new Uint8Array(psiData.length+addData.length);
+              for(let j=0;j<psiData.length;j++)concatData[j]=psiData[j];
+              for(let j=0;j<addData.length;j++)concatData[psiData.length+j]=addData.charCodeAt(j);
+              psiData=readPsiData(concatData.buffer,(sec,dict,code,pid)=>{
+                if(onData)onData(pid,dict,code,Math.floor(sec*90000));
+                return true;
+              },0,ctx);
+              if(psiData)psiData=new Uint8Array(psiData);
+            }else{
+              atobRemain+=response.substring(offset,i);
+            }
+            offset=i;
+          }
+        }
+        readCount+=offset;
+        response=response.substring(offset);
+        readNext();
+      }).catch(()=>{
+        if(readCount)resolve(readCount);
+        else reject("Error: Empty stream");
+      });
+    };
+    readNext();
+  });
 };
 
 const decodeB24CaptionFromCueText=(text,work)=>{
@@ -240,24 +259,25 @@ const decodeB24CaptionFromCueText=(text,work)=>{
   return ret;
 };
 
-const waitForHlsStart=(src,postQuery,interval,delay,onerror,onstart)=>{
-  let method="POST";
-  const poll=()=>{
-    const xhr=new XMLHttpRequest();
-    xhr.open(method,src);
-    if(method=="POST")xhr.setRequestHeader("Content-Type","application/x-www-form-urlencoded");
-    method="GET";
-    xhr.onloadend=()=>{
-      if(xhr.status==200&&xhr.response){
-        if(xhr.response.indexOf("#EXT-X-MEDIA-SEQUENCE:")<0)setTimeout(poll,interval);
-        else setTimeout(()=>{onstart(src);},delay);
-      }else{
-        onerror();
-      }
+const waitForHlsStart=(src,postQuery,interval,delay)=>{
+  return new Promise((resolve,reject)=>{
+    let options={
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:postQuery
     };
-    xhr.send(postQuery);
-  };
-  poll();
+    const poll=()=>{
+      fetch(src,options).then(response=>{
+        if(response.ok)return response.text();
+        reject();
+      }).then(text=>{
+        if(text.indexOf("#EXT-X-MEDIA-SEQUENCE:")<0)setTimeout(poll,interval);
+        else setTimeout(()=>{resolve(src);},delay);
+      }).catch(()=>{reject();});
+    };
+    poll();
+    options=null;
+  });
 };
 
 const unescapeHtml=s=>{
@@ -805,9 +825,7 @@ const runJikkyoScript=()=>{
         if(scroll)chats.scrollTop=chats.scrollHeight;
       },0);
     };
-    onJikkyoStreamError=(status,readCount)=>{
-      addJikkyoMessage("Error! ("+status+"|"+readCount+"Bytes)");
-    };
+    onJikkyoStreamError=addJikkyoMessage;
   };
 };
 
@@ -875,12 +893,13 @@ const runVideoScript=()=>{
       let onDataStream=null;
       let onDataStreamError=null;
       let reopen=false;
-      let xhr=null;
+      let reconnectCount=0;
+      let ctrl=null;
       const openSubStream=()=>{
         if(reopen)return;
-        if(xhr){
-          xhr.abort();
-          xhr=null;
+        if(ctrl){
+          ctrl.abort();
+          ctrl=null;
           if(onDataStream){
             reopen=true;
             setTimeout(()=>{reopen=false;openSubStream();},5000);
@@ -888,23 +907,28 @@ const runVideoScript=()=>{
           return;
         }
         if(!onDataStream)return;
-        let readCount=0;
-        const ctx={};
-        xhr=new XMLHttpRequest();
+        ctrl=new AbortController();
         //TODO: follow ratechange
-        xhr.open("GET","xcode.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&psidata=1&ofssec="+Math.floor(vid.e.currentTime));
-        xhr.onloadend=()=>{
-          if(xhr&&(readCount==0||xhr.status!=0)){
-            if(onDataStreamError)onDataStreamError(xhr.status,readCount);
+        fetch("xcode.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&psidata=1&ofssec="+Math.floor(vid.e.currentTime),{
+          signal:ctrl.signal
+        }).then(response=>{
+          if(!response.ok)throw new Error(response.status+" "+response.statusText);
+          return progressPsiDataChatMixedStream(response.body.getReader(),(...args)=>{if(ctrl&&onDataStream)onDataStream(...args);},null);
+        }).then(readCount=>{
+          if(ctrl){
+            if(onDataStreamError)onDataStreamError("Done: "+readCount+" bytes");
+            if(++reconnectCount>2)reconnectCount=0;
+            else openSubStream();
+            ctrl=null;
           }
-          xhr=null;
-        };
-        xhr.onprogress=()=>{
-          if(xhr&&xhr.status==200&&xhr.response){
-            readCount=progressPsiDataChatMixedStream(readCount,xhr.response,onDataStream,null,ctx);
+        }).catch(e=>{
+          if(ctrl){
+            if(onDataStreamError)onDataStreamError(""+e);
+            if(++reconnectCount>2)reconnectCount=0;
+            else openSubStream();
+            ctrl=null;
           }
-        };
-        xhr.send();
+        });
       };
       cbDatacast.checked=false;
       cbDatacast.onclick=()=>{
@@ -929,8 +953,8 @@ const runVideoScript=()=>{
         onDataStream=(pid,dict,code,pcr)=>{
           dict[code]=bmlBrowserPlayTSSection(pid,dict[code],pcr)||dict[code];
         };
-        onDataStreamError=(status,readCount)=>{
-          document.querySelector(".remote-control-indicator").innerText="Error! ("+status+"|"+readCount+"Bytes)";
+        onDataStreamError=text=>{
+          document.querySelector(".remote-control-indicator").innerText=text;
         };
         openSubStream();
       };
@@ -962,7 +986,7 @@ const runVideoScript=()=>{
         };
         readTimer=setTimeout(read,500);
       };
-      let xhr=null;
+      let psiDataFetched=false;
       const cbDatacast=document.getElementById("cb-datacast");
       cbDatacast.checked=false;
       cbDatacast.onclick=()=>{
@@ -984,21 +1008,17 @@ const runVideoScript=()=>{
         bmlBrowserSetVisibleSize(vcont.clientWidth,vcont.clientHeight);
         hideOnscreenButtons(true);
         bmlBrowserSetInvisible(false);
-        if(xhr)return;
-        xhr=new XMLHttpRequest();
-        xhr.open("GET",vid.initSrc.replace(/\.[0-9A-Za-z]+$/,"")+".psc");
-        xhr.responseType="arraybuffer";
-        xhr.overrideMimeType("application/octet-stream");
-        xhr.onloadend=()=>{
-          if(!psiData){
-            document.querySelector(".remote-control-indicator").innerText="Error! ("+xhr.status+")";
-          }
-        };
-        xhr.onload=()=>{
-          if(xhr.status!=200||!xhr.response)return;
-          psiData=xhr.response;
-        };
-        xhr.send();
+        if(psiDataFetched)return;
+        psiDataFetched=true;
+        fetch(vid.initSrc.replace(/\.[0-9A-Za-z]+$/,"")+".psc").then(response=>{
+          if(!response.ok)throw new Error(response.status+" "+response.statusText);
+          return response.arrayBuffer();
+        }).then(arrayBuffer=>{
+          psiData=arrayBuffer;
+        }).catch(e=>{
+          document.querySelector(".remote-control-indicator").innerText=""+e;
+          psiDataFetched=false;
+        });
       };
     }
   }
@@ -1040,7 +1060,7 @@ const runVideoScript=()=>{
     const inputTM=document.querySelector('#jikkyo-config > input[name="tm"]');
     const inputTMSec=document.querySelector('#jikkyo-config > select[name="tmsec"]');
     let jkID=0,jkTM=0;
-    let xhr=null;
+    let logTextFetched=false;
     const onclickJikkyo=()=>{
       cbJikkyo.onclick=onclickJikkyo;
       if(!cbJikkyo.checked){
@@ -1051,17 +1071,13 @@ const runVideoScript=()=>{
       }
       toggleJikkyo(true);
       startRead();
-      if(xhr)return;
-      xhr=new XMLHttpRequest();
-      xhr.open("GET","jklog.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&fsec="+Math.floor(vid.e.duration)+"&jkid="+jkID+"&jktm="+jkTM);
-      xhr.onloadend=()=>{
-        if(!logText){
-          if(onJikkyoStreamError)onJikkyoStreamError(xhr.status,0);
-        }
-      };
-      xhr.onload=()=>{
-        if(xhr.status!=200||!xhr.response)return;
-        logText=xhr.response;
+      if(logTextFetched)return;
+      logTextFetched=true;
+      fetch("jklog.lua?fname="+vid.initSrc.replace(/^(?:\.\.\/)+/,"")+"&fsec="+Math.floor(vid.e.duration)+"&jkid="+jkID+"&jktm="+jkTM).then(response=>{
+        if(!response.ok)throw new Error(response.status+" "+response.statusText);
+        return response.text();
+      }).then(text=>{
+        logText=text;
         const m=logText.match(/^<!-- J=([0-9]+);T=([0-9]+)/);
         if(m){
           for(const opt of selectID.options){
@@ -1082,19 +1098,21 @@ const runVideoScript=()=>{
         if(stats.canvas){
           comm.insertBefore(stats.canvas,comm.firstChild);
         }
-      };
-      xhr.send();
+      }).catch(e=>{
+        if(onJikkyoStreamError)onJikkyoStreamError(""+e);
+        logTextFetched=false;
+      });
     };
     const checkStartTimer=setInterval(()=>{
       if(vid.e.duration<Infinity){
         clearInterval(checkStartTimer);
         const btnConfig=document.querySelector("#jikkyo-config > button");
         btnConfig.onclick=selectID.onchange=()=>{
-          if(xhr&&xhr.readyState!=4)return;
+          if(logTextFetched&&logText==null)return;
           jkID=+(selectID.value||"0");
           jkTM=inputTM.value?Math.floor(Date.parse(inputTM.value+"Z")/60000)*60+inputTMSec.selectedIndex-32400:0;
           logText=null;
-          xhr=null;
+          logTextFetched=false;
           onclickJikkyo();
         };
         onclickJikkyo();
@@ -1212,7 +1230,7 @@ const runTranscodeScript=()=>{
       readTimer=setTimeout(read,200);
     };
     let jkID=0,jkTM=0;
-    let xhr=null;
+    let logTextFetched=false;
     const onclickJikkyo=()=>{
       cbJikkyo.onclick=onclickJikkyo;
       document.querySelector('#vid-form input[name="jikkyo"]').value=cbJikkyo.checked?"1":"0";
@@ -1224,17 +1242,13 @@ const runTranscodeScript=()=>{
       }
       toggleJikkyo(true);
       startRead();
-      if(xhr)return;
-      xhr=new XMLHttpRequest();
-      xhr.open("GET","jklog.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+"&jkid="+jkID+"&jktm="+jkTM);
-      xhr.onloadend=()=>{
-        if(!logText){
-          if(onJikkyoStreamError)onJikkyoStreamError(xhr.status,0);
-        }
-      };
-      xhr.onload=()=>{
-        if(xhr.status!=200||!xhr.response)return;
-        logText=xhr.response;
+      if(logTextFetched)return;
+      logTextFetched=true;
+      fetch("jklog.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+"&jkid="+jkID+"&jktm="+jkTM).then(response=>{
+        if(!response.ok)throw new Error(response.status+" "+response.statusText);
+        return response.text();
+      }).then(text=>{
+        logText=text;
         const m=logText.match(/^<!-- J=([0-9]+);T=([0-9]+)/);
         if(m){
           for(const opt of selectID.options){
@@ -1255,16 +1269,18 @@ const runTranscodeScript=()=>{
         if(stats.canvas){
           comm.insertBefore(stats.canvas,comm.firstChild);
         }
-      };
-      xhr.send();
+      }).catch(e=>{
+        if(onJikkyoStreamError)onJikkyoStreamError(""+e);
+        logTextFetched=false;
+      });
     };
     const btnConfig=document.querySelector("#jikkyo-config > button");
     btnConfig.onclick=selectID.onchange=()=>{
-      if(xhr&&xhr.readyState!=4)return;
+      if(logTextFetched&&logText==null)return;
       jkID=+(selectID.value||"0");
       jkTM=inputTM.value?Math.floor(Date.parse(inputTM.value+"Z")/60000)*60+inputTMSec.selectedIndex-32400:0;
       logText=null;
-      xhr=null;
+      logTextFetched=false;
       onclickJikkyo();
     };
     setTimeout(onclickJikkyo,500);
@@ -1276,12 +1292,13 @@ const runTranscodeScript=()=>{
     let jkID=0,jkTM=0;
     {
       let reopen=false;
-      let xhr=null;
+      let reconnectCount=0;
+      let ctrl=null;
       openSubStream=()=>{
         if(reopen)return;
-        if(xhr){
-          xhr.abort();
-          xhr=null;
+        if(ctrl){
+          ctrl.abort();
+          ctrl=null;
           if(onDataStream||(onJikkyoStream&&!shiftable)){
             reopen=true;
             setTimeout(()=>{reopen=false;openSubStream();},postCommentQuery?5000:2000);
@@ -1289,22 +1306,15 @@ const runTranscodeScript=()=>{
           return;
         }
         if(!onDataStream&&!(onJikkyoStream&&!shiftable))return;
-        let readCount=0;
-        const ctx={};
-        xhr=new XMLHttpRequest();
-        xhr.open("GET",(vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc)+(onDataStream?"&psidata=1":"")+
-                 (onJikkyoStream&&!shiftable?"&jikkyo=1&jkid="+jkID+"&jktm="+jkTM:"")+"&ofssec="+currentAbsTime());
-        xhr.onloadend=()=>{
-          if(xhr&&(readCount==0||xhr.status!=0)){
-            if(onDataStreamError)onDataStreamError(xhr.status,readCount);
-            if(onJikkyoStreamError&&!shiftable)onJikkyoStreamError(xhr.status,readCount);
-          }
-          xhr=null;
-        };
         let mHeader=null;
-        xhr.onprogress=()=>{
-          if(xhr&&xhr.status==200&&xhr.response){
-            readCount=progressPsiDataChatMixedStream(readCount,xhr.response,onDataStream,s=>{
+        ctrl=new AbortController();
+        fetch((vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc)+(onDataStream?"&psidata=1":"")+
+              (onJikkyoStream&&!shiftable?"&jikkyo=1&jkid="+jkID+"&jktm="+jkTM:"")+"&ofssec="+currentAbsTime(),{
+          signal:ctrl.signal
+        }).then(response=>{
+          if(!response.ok)throw new Error(response.status+" "+response.statusText);
+          return progressPsiDataChatMixedStream(response.body.getReader(),(...args)=>{if(ctrl&&onDataStream)onDataStream(...args);},s=>{
+            if(ctrl){
               if(!mHeader&&!!(mHeader=s.match(/^<!-- J=([0-9]+)(?:;T=([0-9]+))?/))){
                 for(const opt of selectID.options){
                   if(opt.value==mHeader[1]){
@@ -1319,10 +1329,25 @@ const runTranscodeScript=()=>{
                 }
               }
               if(onJikkyoStream)onJikkyoStream(s);
-            },ctx);
+            }
+          });
+        }).then(readCount=>{
+          if(ctrl){
+            if(onDataStreamError)onDataStreamError("Done: "+readCount+" bytes");
+            if(onJikkyoStreamError&&!shiftable)onJikkyoStreamError("Done: "+readCount+" bytes");
+            if(++reconnectCount>2)reconnectCount=0;
+            else openSubStream();
+            ctrl=null;
           }
-        };
-        xhr.send();
+        }).catch(e=>{
+          if(ctrl){
+            if(onDataStreamError)onDataStreamError(""+e);
+            if(onJikkyoStreamError&&!shiftable)onJikkyoStreamError(""+e);
+            if(++reconnectCount>2)reconnectCount=0;
+            else openSubStream();
+            ctrl=null;
+          }
+        });
       };
     }
     if(cbDatacast){
@@ -1349,8 +1374,8 @@ const runTranscodeScript=()=>{
         onDataStream=(pid,dict,code,pcr)=>{
           dict[code]=bmlBrowserPlayTSSection(pid,dict[code],pcr)||dict[code];
         };
-        onDataStreamError=(status,readCount)=>{
-          document.querySelector(".remote-control-indicator").innerText="Error! ("+status+"|"+readCount+"Bytes)";
+        onDataStreamError=text=>{
+          document.querySelector(".remote-control-indicator").innerText=text;
         };
         openSubStream();
       };
@@ -1378,15 +1403,15 @@ const runTranscodeScript=()=>{
               }
               return;
             }
-            const xhr=new XMLHttpRequest();
-            xhr.open("POST","comment.lua");
-            xhr.setRequestHeader("Content-Type","application/x-www-form-urlencoded");
-            xhr.onloadend=()=>{
-              if(xhr.status!=200){
-                addJikkyoMessage("Post error! ("+xhr.status+")");
-              }
-            };
-            xhr.send(postCommentQuery+(commInput.className=="refuge"?"&refuge=1":"")+"&comm="+encodeURIComponent(commInput.value).replace(/%20/g,"+"));
+            fetch("comment.lua",{
+              method:"POST",
+              headers:{"Content-Type":"application/x-www-form-urlencoded"},
+              body:postCommentQuery+(commInput.className=="refuge"?"&refuge=1":"")+"&comm="+encodeURIComponent(commInput.value).replace(/%20/g,"+")
+            }).then(response=>{
+              if(!response.ok)throw new Error(response.status+" "+response.statusText);
+            }).catch(e=>{
+              addJikkyoMessage("Post error! ("+e+")");
+            });
           });
         }
         openSubStream();
@@ -1412,7 +1437,7 @@ const runTranscodeScript=()=>{
     const vthumb=document.querySelector("#vid-seek canvas");
     const vstatus=document.getElementById("vid-seek-status");
     let thumbTimer=0;
-    let thumbXhr=null;
+    let thumbFetching=false;
     const rangeSeekSec=n=>{
       const i=Math.floor(n);
       return Math.floor((vselect.options[vselect.options.length-101+Math.min(i+1,100)].dataset.sec||-1)*(n-i)-
@@ -1449,18 +1474,18 @@ const runTranscodeScript=()=>{
       if(vthumb&&vid.grabFirstFrame){
         clearTimeout(thumbTimer);
         thumbTimer=setTimeout(()=>{
-          if((mouseX==null&&!vseek.classList.contains("active"))||thumbXhr)return;
+          if((mouseX==null&&!vseek.classList.contains("active"))||thumbFetching)return;
           //Get thumbnail of seek position.
-          thumbXhr=new XMLHttpRequest();
           const adjustX=(rangeSeek.clientHeight-parseFloat(getComputedStyle(rangeSeek).paddingTop)-parseFloat(getComputedStyle(rangeSeek).paddingBottom))*0.8;
           const n=Math.min(Math.max(vseek.classList.contains("active")?rangeSeek.value:(mouseX-adjustX/2)/(rangeSeek.clientWidth-adjustX)*100,0),100);
-          thumbXhr.open("GET","grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+(rangeSeekSec(n)>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec(n):"&offset="+Math.floor(n)));
-          thumbXhr.responseType="arraybuffer";
-          thumbXhr.onloadend=()=>{
-            if((mouseX!=null||vseek.classList.contains("active"))&&thumbXhr.status==200&&thumbXhr.response){
-              const buffer=vid.getGrabberInputBuffer(thumbXhr.response.byteLength);
-              buffer.set(new Uint8Array(thumbXhr.response));
-              const frame=vid.grabFirstFrame(thumbXhr.response.byteLength);
+          thumbFetching=true;
+          fetch("grabber.lua"+vid.initSrc.match(/\?fname=[^&]*/)[0]+(rangeSeekSec(n)>=0&&vid.seekWithoutTransition?"&ofssec="+rangeSeekSec(n):"&offset="+Math.floor(n))).then(response=>{
+            if(response.ok)return response.arrayBuffer();
+          }).then(arrayBuffer=>{
+            if(mouseX!=null||vseek.classList.contains("active")){
+              const buffer=vid.getGrabberInputBuffer(arrayBuffer.byteLength);
+              buffer.set(new Uint8Array(arrayBuffer));
+              const frame=vid.grabFirstFrame(arrayBuffer.byteLength);
               if(frame){
                 vthumb.width=frame.width;
                 vthumb.height=frame.height;
@@ -1470,9 +1495,9 @@ const runTranscodeScript=()=>{
                 setLeft(vseek.classList.contains("active")?rangeSeek.clientWidth*(rangeSeek.value/100):mouseX);
               }
             }
-            thumbXhr=null;
-          };
-          thumbXhr.send();
+          }).finally(()=>{
+            thumbFetching=false;
+          });
         },thumbTimer?200:0);
       }
     };
@@ -1628,7 +1653,7 @@ const runHlsScript=()=>{
     waitForHlsStart(vid.initSrc+
       //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
       "&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
-      "ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
+      "ctok="+vid.e.dataset.ctok+"&open=1",200,500).then(src=>{
       if(Hls.isSupported()){
         const hls=new Hls({workerPath:"hls.worker.js"});
         hls.loadSource(src);
@@ -1662,16 +1687,20 @@ const runHlsScript=()=>{
           waitForHlsStart((vid.fastParam?vid.initSrc.replace(/&fast=[^&]*/,"")+vid.fastParam:vid.initSrc).replace("&load=","&reload=")+"&ofssec="+vid.ofssec+
             //Excludes Firefox for Android, because playback of non-keyframe fragmented MP4 is jerky.
             "&hls="+(++swtCount)+"_"+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4||/Android.+Firefox/i.test(navigator.userAgent)?"":"&hls4="+vid.e.dataset.hlsMp4),
-            "ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
+            "ctok="+vid.e.dataset.ctok+"&open=1",200,500).then(src=>{
             hls.loadSource(src);
             hls.attachMedia(vid.e);
             vid.seekWithoutTransition=swt;
+          }).catch(()=>{
+            vid.e.poster=null;
           });
         };
         vid.seekWithoutTransition=swt;
       }else if(vid.e.canPlayType("application/vnd.apple.mpegurl")){
         vid.e.src=src;
       }
+    }).catch(()=>{
+      vid.e.poster=null;
     });
   }else{
     //Excludes Android even though canPlayType here may not return an empty string, because the quality of the native implementation is inconsistent.
@@ -1682,8 +1711,10 @@ const runHlsScript=()=>{
       document.getElementById("label-caption").style.display="inline";
       const cbLive=document.getElementById("cb-live");
       if(cbLive)cbLive.checked=true;
-      waitForHlsStart(vid.initSrc+"&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4?"":"&hls4="+vid.e.dataset.hlsMp4),"ctok="+vid.e.dataset.ctok+"&open=1",200,500,()=>{vid.e.poster=null;},src=>{
+      waitForHlsStart(vid.initSrc+"&hls="+vid.e.dataset.hls+(!vid.e.dataset.hlsMp4?"":"&hls4="+vid.e.dataset.hlsMp4),"ctok="+vid.e.dataset.ctok+"&open=1",200,500).then(src=>{
         vid.e.src=src;
+      }).catch(()=>{
+        vid.e.poster=null;
       });
     }else{
       vid.e.src=vid.initSrc;
