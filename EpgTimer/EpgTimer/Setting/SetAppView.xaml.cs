@@ -1,411 +1,503 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.Windows.Interop;
+using System.Windows.Documents;
 using System.IO;
 using System.Reflection;
 
 namespace EpgTimer.Setting
 {
+    using BoxExchangeEdit;
+
     /// <summary>
     /// SetAppView.xaml の相互作用ロジック
     /// </summary>
     public partial class SetAppView : UserControl
     {
+        private Settings settings { get { return (Settings)DataContext; } }
+
+        BoxExchangeEditor bxb;
+        BoxExchangeEditor bxt;
+        private List<string> buttonItem = Settings.GetViewButtonAllIDs();
+        private List<string> taskItem = Settings.GetTaskMenuAllIDs();
+
+        private RadioBtnSelect delReserveModeRadioBtns;
+
         public SetAppView()
         {
             InitializeComponent();
 
-            checkBox_wakeReconnect.IsEnabled = CommonManager.Instance.NWMode;
-            checkBox_suspendClose.IsEnabled = CommonManager.Instance.NWMode;
-            button_srvSetting.IsEnabled = CommonManager.Instance.NWMode == false;
-
-            button_shortCutAdd.Visibility = File.Exists(System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Startup), "EpgTime.lnk")) ? Visibility.Hidden : Visibility.Visible;
-            button_shortCutDel.Visibility = button_shortCutAdd.Visibility == Visibility.Visible ? Visibility.Hidden : Visibility.Visible;
-            listBox_service.ItemsSource = ChSet5.Instance.ChListSelected.Select(a => new ServiceViewItem(a));
-
-            // バージョン文字列を表示
-            textBlock_versionText.Text = App.VERSION_TEXT != "" ? "Ver." + App.VERSION_TEXT : "";
-        }
-
-        private void UserControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            var settings = (Settings)DataContext;
-            if (settings != null)
+            if (CommonManager.Instance.NWMode == true)
             {
-                comboBox_startTab.SelectedItem =
-                    comboBox_startTab.Items.Cast<ComboBoxItem>().FirstOrDefault(a => (string)a.Tag == settings.StartTab) ?? comboBox_startTab.Items[0];
-                listBox_viewBtn.Items.Clear();
-                foreach (string item in settings.ViewButtonList)
+                tabItem1.Foreground = SystemColors.GrayTextBrush;
+                grid_AppRecEnd.IsEnabled = false;
+                grid_AppRec.IsEnabled = false;
+                ViewUtil.SetIsEnabledChildren(grid_AppCancelMain, false);
+                ViewUtil.SetIsEnabledChildren(grid_AppCancelMainInput, false);
+                textBox_process.SetReadOnlyWithEffect(true);
+
+                ViewUtil.SetIsEnabledChildren(grid_AppReserve1, false);
+                ViewUtil.SetIsEnabledChildren(grid_AppReserve2, false);
+                ViewUtil.SetIsEnabledChildren(grid_AppReserveIgnore, false);
+                text_RecInfo2RegExp.SetReadOnlyWithEffect(true);
+                checkBox_autoDel.IsEnabled = false;
+                ViewUtil.SetIsEnabledChildren(grid_App2DelMain, false);
+                listBox_ext.IsEnabled = true;
+                textBox_ext.SetReadOnlyWithEffect(true);
+                grid_App2DelChkFolderText.IsEnabled = true;
+                listBox_chk_folder.IsEnabled = true;
+                textBox_chk_folder.SetReadOnlyWithEffect(true);
+                button_chk_open.IsEnabled = true;
+
+                grid_recname.IsEnabled = false;
+                checkBox_noChkYen.IsEnabled = false;
+                grid_delReserve.IsEnabled = false;
+
+                checkBox_wakeReconnect.IsEnabled = true;
+                stackPanel_WoLWait.IsEnabled = true;
+                checkBox_suspendClose.IsEnabled = true;
+                checkBox_keepTCPConnect.IsEnabled = true;
+                grid_srvResident.IsEnabled = false;
+                button_srvSetting.IsEnabled = false;
+                label_shortCutSrv.IsEnabled = false;
+                button_shortCutSrv.IsEnabled = false;
+                checkBox_srvSaveNotifyLog.IsEnabled = false;
+                checkBox_srvSaveDebugLog.IsEnabled = false;
+                grid_tsExt.IsEnabled = false;
+            }
+
+            //0 全般
+            button_srvSetting.Click += (sender, e) => CommonManager.OpenSrvSetting();
+
+            var SetScButton = new Action<Button, string, string>((btn, baseName, scLinkPath) =>
+            {
+                string scPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), baseName + ".lnk");
+                btn.Content = File.Exists(scPath) ? "削除" : "作成";
+                btn.Click += (sender, e) =>
                 {
-                    // リストが空であることを示す特殊なアイテムを無視
-                    if (item != "（なし）")
+                    try
                     {
-                        listBox_viewBtn.Items.Add(item);
+                        if (File.Exists(scPath))
+                        {
+                            File.Delete(scPath);
+                        }
+                        else
+                        {
+                            CommonUtil.CreateShortCut(scPath, scLinkPath, "");
+                        }
+                        btn.Content = File.Exists(scPath) ? "削除" : "作成";
                     }
-                }
-                OnUpdateViewButtonListBox(true);
+                    catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+                };
+            });
+            SetScButton(button_shortCut, Path.GetFileNameWithoutExtension(SettingPath.ModuleName), Path.Combine(SettingPath.ModulePath, SettingPath.ModuleName));
+            SetScButton(button_shortCutSrv, "EpgTimerSrv", Path.Combine(SettingPath.ModulePath, "EpgTimerSrv.exe"));
 
-                listBox_viewTask.Items.Clear();
-                foreach (string item in settings.TaskMenuList)
+            //1 録画動作
+            RadioButtonTagConverter.SetBindingButtons(CommonUtil.NameOf(() => settings.DefRecEndMode), panel_recEndMode);
+            button_process_open.Click += ViewUtil.OpenFileNameDialog(textBox_process, true, "", ".exe");
+            comboBox_process.Items.AddItems(new[] { "リアルタイム", "高", "通常以上", "通常", "通常以下", "低" });
+
+            var bx = new BoxExchangeEditor(null, listBox_process, true);
+            listBox_process.SelectionChanged += ViewUtil.ListBox_TextBoxSyncSelectionChanged(listBox_process, textBox_process);
+            if (CommonManager.Instance.NWMode == false)
+            {
+                bx.AllowKeyAction();
+                bx.AllowDragDrop();
+                button_process_del.Click += bx.button_Delete_Click;
+                button_process_add.Click += ViewUtil.ListBox_TextCheckAdd(listBox_process, textBox_process);
+                textBox_process.KeyDown += ViewUtil.KeyDown_Enter(button_process_add);
+            }
+
+            //2 予約管理情報
+            button_chk_open.Click += ViewUtil.OpenFolderNameDialog(textBox_chk_folder, "自動削除対象フォルダの選択", true);
+
+            var bxe = new BoxExchangeEditor(null, listBox_ext, true);
+            var bxc = new BoxExchangeEditor(null, listBox_chk_folder, true);
+            listBox_ext.SelectionChanged += ViewUtil.ListBox_TextBoxSyncSelectionChanged(listBox_ext, textBox_ext);
+            bxc.TargetBox.SelectionChanged += ViewUtil.ListBox_TextBoxSyncSelectionChanged(bxc.TargetBox, textBox_chk_folder);
+            bxc.TargetBox.KeyDown += ViewUtil.KeyDown_Enter(button_chk_open);
+            bxc.targetBoxAllowDoubleClick(bxc.TargetBox, (sender, e) => button_chk_open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            if (CommonManager.Instance.NWMode == false)
+            {
+                bxe.AllowKeyAction();
+                bxe.AllowDragDrop();
+                button_ext_del.Click += bxe.button_Delete_Click;
+                button_ext_add.Click += ViewUtil.ListBox_TextCheckAdd(listBox_ext, textBox_ext);
+                bxc.AllowKeyAction();
+                bxc.AllowDragDrop();
+                button_chk_del.Click += bxc.button_Delete_Click;
+                button_chk_add.Click += (sender, e) => textBox_chk_folder.Text = SettingPath.CheckFolder(textBox_chk_folder.Text);
+                button_chk_add.Click += ViewUtil.ListBox_TextCheckAdd(listBox_chk_folder, textBox_chk_folder);
+
+                textBox_ext.KeyDown += ViewUtil.KeyDown_Enter(button_ext_add);
+                textBox_chk_folder.KeyDown += ViewUtil.KeyDown_Enter(button_chk_add);
+            }
+
+            //3 ボタン表示 ボタン表示画面の上下ボタンのみ他と同じものを使用する。
+            bxb = new BoxExchangeEditor(this.listBox_itemBtn, this.listBox_viewBtn, true);
+            bxt = new BoxExchangeEditor(this.listBox_itemTask, this.listBox_viewTask, true);
+            textblockTimer.Text = CommonManager.Instance.NWMode == true ?
+                "EpgTimerNW側の設定です。" :
+                "録画終了時にスタンバイ、休止する場合は必ず表示されます(ただし、サービス未使用時はこの設定は使用されず15秒固定)。";
+
+            //上部表示ボタン関係
+            bxb.AllowDuplication(StringItem.Items(Settings.ViewButtonSpacer), StringItem.Cloner, StringItem.Comparator);
+            button_btnUp.Click += bxb.button_Up_Click;
+            button_btnDown.Click += bxb.button_Down_Click;
+            button_btnAdd.Click += (sender, e) => button_Add(bxb, buttonItem);
+            button_btnIns.Click += (sender, e) => button_Add(bxb, buttonItem, true);
+            button_btnDel.Click += (sender, e) => button_Dell(bxb, bxt, buttonItem);
+            bxb.sourceBoxAllowKeyAction(listBox_itemBtn, (sender, e) => button_btnAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxb.targetBoxAllowKeyAction(listBox_viewBtn, (sender, e) => button_btnDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxb.sourceBoxAllowDoubleClick(listBox_itemBtn, (sender, e) => button_btnAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxb.targetBoxAllowDoubleClick(listBox_viewBtn, (sender, e) => button_btnDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxb.sourceBoxAllowDragDrop(listBox_itemBtn, (sender, e) => button_btnDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxb.targetBoxAllowDragDrop(listBox_viewBtn, (sender, e) => drag_drop(sender, e, button_btnAdd, button_btnIns));
+
+            //タスクアイコン関係
+            bxt.AllowDuplication(StringItem.Items(Settings.TaskMenuSeparator), StringItem.Cloner, StringItem.Comparator);
+            button_taskUp.Click += bxt.button_Up_Click;
+            button_taskDown.Click += bxt.button_Down_Click;
+            button_taskAdd.Click += (sender, e) => button_Add(bxt, taskItem);
+            button_taskIns.Click += (sender, e) => button_Add(bxt, taskItem, true);
+            button_taskDel.Click += (sender, e) => button_Dell(bxt, bxb, taskItem);
+            bxt.sourceBoxAllowKeyAction(listBox_itemTask, (sender, e) => button_taskAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxt.targetBoxAllowKeyAction(listBox_viewTask, (sender, e) => button_taskDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxt.sourceBoxAllowDoubleClick(listBox_itemTask, (sender, e) => button_taskAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxt.targetBoxAllowDoubleClick(listBox_viewTask, (sender, e) => button_taskDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxt.sourceBoxAllowDragDrop(listBox_itemTask, (sender, e) => button_taskDel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxt.targetBoxAllowDragDrop(listBox_viewTask, (sender, e) => drag_drop(sender, e, button_taskAdd, button_taskIns));
+
+            //4 カスタムボタン
+            button_exe1.Click += ViewUtil.OpenFileNameDialog(textBox_exe1, false, "", ".exe");
+            button_exe2.Click += ViewUtil.OpenFileNameDialog(textBox_exe2, false, "", ".exe");
+            button_exe3.Click += ViewUtil.OpenFileNameDialog(textBox_exe3, false, "", ".exe");
+
+            //5 iEpg キャンセルアクションだけは付けておく
+            new BoxExchangeEditor(null, this.listBox_service, true);
+            var bxi = new BoxExchangeEditor(null, this.listBox_iEPG, true);
+            bxi.targetBoxAllowKeyAction(this.listBox_iEPG, (sender, e) => button_del.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            bxi.TargetBox.SelectionChanged += ViewUtil.ListBox_TextBoxSyncSelectionChanged(bxi.TargetBox, textBox_station);
+            textBox_station.KeyDown += ViewUtil.KeyDown_Enter(button_add);
+        }
+
+        public void LoadSetting()
+        {
+            //0 全般
+            int residentMode = IniFileHandler.GetPrivateProfileInt("SET", "ResidentMode", 2, SettingPath.TimerSrvIniPath);
+            checkBox_srvResident.IsChecked = residentMode >= 1;
+            checkBox_srvShowTray.IsChecked = residentMode >= 2;
+            checkBox_NotifyTipStyle.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "NotifyTipStyle", false, SettingPath.TimerSrvIniPath);
+            checkBox_blinkPreRec.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "BlinkPreRec", false, SettingPath.TimerSrvIniPath);
+            int NoBalloonTip = IniFileHandler.GetPrivateProfileInt("SET", "NoBalloonTip", 0, SettingPath.TimerSrvIniPath);
+            checkBox_srvBalloonTip.IsChecked = NoBalloonTip != 1;
+            checkBox_srvBalloonTipRealtime.IsChecked = NoBalloonTip == 2;
+
+            checkBox_srvSaveNotifyLog.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "SaveNotifyLog", false, SettingPath.TimerSrvIniPath);
+            checkBox_srvSaveDebugLog.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "SaveDebugLog", false, SettingPath.TimerSrvIniPath);
+            textBox_tsExt.Text = SettingPath.CheckTSExtension(IniFileHandler.GetPrivateProfileString("SET", "TSExt", ".ts", SettingPath.TimerSrvIniPath));
+
+            //1 録画動作
+            textBox_pcWakeTime.Text = IniFileHandler.GetPrivateProfileInt("SET", "WakeTime", 5, SettingPath.TimerSrvIniPath).ToString();
+
+            listBox_process.Items.Clear();
+            int ngCount = IniFileHandler.GetPrivateProfileInt("NO_SUSPEND", "Count", int.MaxValue, SettingPath.TimerSrvIniPath);
+            if (ngCount == int.MaxValue)
+            {
+                listBox_process.Items.Add("EpgDataCap_Bon");
+            }
+            else
+            {
+                for (int i = 0; i < ngCount; i++)
                 {
-                    listBox_viewTask.Items.Add(item);
+                    listBox_process.Items.Add(IniFileHandler.GetPrivateProfileString("NO_SUSPEND", i.ToString(), "", SettingPath.TimerSrvIniPath));
                 }
-                OnUpdateViewTaskListBox(true);
             }
-        }
+            textBox_ng_min.Text = IniFileHandler.GetPrivateProfileString("NO_SUSPEND", "NoStandbyTime", "10", SettingPath.TimerSrvIniPath);
+            checkBox_ng_usePC.IsChecked = IniFileHandler.GetPrivateProfileBool("NO_SUSPEND", "NoUsePC", false, SettingPath.TimerSrvIniPath);
+            textBox_ng_usePC_min.Text = IniFileHandler.GetPrivateProfileString("NO_SUSPEND", "NoUsePCTime", "3", SettingPath.TimerSrvIniPath);
+            checkBox_ng_fileStreaming.IsChecked = IniFileHandler.GetPrivateProfileBool("NO_SUSPEND", "NoFileStreaming", false, SettingPath.TimerSrvIniPath);
+            checkBox_ng_shareFile.IsChecked = IniFileHandler.GetPrivateProfileBool("NO_SUSPEND", "NoShareFile", false, SettingPath.TimerSrvIniPath);
 
-        private void OnUpdateViewButtonListBox(bool updateAll)
-        {
-            var itemList = new List<string> {
-                "（空白）", "設定", "検索", "スタンバイ", "休止", "EPG取得", "EPG再読み込み", "終了",
-                "カスタム１" , "カスタム２", "NetworkTV終了", "情報通知ログ"
-            };
-            if (CommonManager.Instance.NWMode)
+            checkBox_appMin.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecMinWake", true, SettingPath.TimerSrvIniPath);
+            int recView= IniFileHandler.GetPrivateProfileInt("SET", "RecView", 1, SettingPath.TimerSrvIniPath);
+            checkBox_appOpenViewing.IsChecked = (recView & 1) != 0;
+            checkBox_appOpenRec.IsChecked = (recView & 2) != 0;
+            checkBox_appOpenAlways.IsChecked = (recView & 4) != 0;
+            checkBox_appDrop.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "DropLog", true, SettingPath.TimerSrvIniPath);
+            checkBox_addPgInfo.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "PgInfoLog", true, SettingPath.TimerSrvIniPath);
+            checkBox_PgInfoLogAsUtf8.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "PgInfoLogAsUtf8", false, SettingPath.TimerSrvIniPath);
+            checkBox_appNW.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecNW", false, SettingPath.TimerSrvIniPath);
+            checkBox_appKeepDisk.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "KeepDisk", true, SettingPath.TimerSrvIniPath);
+            checkBox_appOverWrite.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecOverWrite", false, SettingPath.TimerSrvIniPath);
+            comboBox_process.SelectedIndex = IniFileHandler.GetPrivateProfileInt("SET", "ProcessPriority", 3, SettingPath.TimerSrvIniPath);
+            
+            //2 予約管理情報
+            checkBox_back_priority.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "BackPriority", true, SettingPath.TimerSrvIniPath);
+            checkBox_fixedTunerPriority.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "FixedTunerPriority", true, SettingPath.TimerSrvIniPath);
+            text_RecInfo2RegExp.Text = IniFileHandler.GetPrivateProfileString("SET", "RecInfo2RegExp", "", SettingPath.TimerSrvIniPath);
+            checkBox_RetryOtherTuners.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RetryOtherTuners", false, SettingPath.TimerSrvIniPath);
+            checkBox_CommentAutoAdd.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "CommentAutoAdd", false, SettingPath.TimerSrvIniPath);
+            checkBox_FixNoRecToServiceOnly.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "FixNoRecToServiceOnly", false, SettingPath.TimerSrvIniPath);
+            checkBox_recInfoFolderOnly.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecInfoFolderOnly", true, SettingPath.TimerSrvIniPath);
+            checkBox_autoDelRecInfo.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "AutoDelRecInfo", false, SettingPath.TimerSrvIniPath);
+            textBox_autoDelRecInfo.Text = IniFileHandler.GetPrivateProfileInt("SET", "AutoDelRecInfoNum", 100, SettingPath.TimerSrvIniPath).ToString();
+            textBox_RecInfo2Max.Text = IniFileHandler.GetPrivateProfileInt("SET", "RecInfo2Max", 1000, SettingPath.TimerSrvIniPath).ToString();
+            textBox_RecInfo2DropChk.Text = IniFileHandler.GetPrivateProfileInt("SET", "RecInfo2DropChk", 2, SettingPath.TimerSrvIniPath).ToString();
+            checkBox_recInfoDelFile.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecInfoDelFile", false, SettingPath.CommonIniPath);
+            checkBox_applyExtTo.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "ApplyExtToRecInfoDel", false, SettingPath.TimerSrvIniPath);
+            checkBox_autoDel.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "AutoDel", false, SettingPath.TimerSrvIniPath);
+
+            listBox_ext.Items.Clear();
+            int count;
+            count = IniFileHandler.GetPrivateProfileInt("DEL_EXT", "Count", int.MaxValue, SettingPath.TimerSrvIniPath);
+            if (count == int.MaxValue)
             {
-                itemList.Add("再接続");
+                button_ext_def_Click(null, null);
             }
-            // コンテキストを更新する
-            var viewButtonList = ((Settings)DataContext).ViewButtonList;
-            viewButtonList.Clear();
-            viewButtonList.AddRange(listBox_viewBtn.Items.OfType<string>());
-            if (viewButtonList.Count == 0)
+            else
             {
-                // リストが空であることを示す特殊なアイテムを追加
-                viewButtonList.Add("（なし）");
-            }
-            if (updateAll)
-            {
-                listBox_itemBtn.Items.Clear();
-                foreach (string item in itemList)
+                for (int i = 0; i < count; i++)
                 {
-                    // 表示項目にないものだけ追加
-                    if (item == "（空白）" || viewButtonList.IndexOf(item) < 0)
-                    {
-                        listBox_itemBtn.Items.Add(item);
-                    }
+                    listBox_ext.Items.Add(IniFileHandler.GetPrivateProfileString("DEL_EXT", i.ToString(), "", SettingPath.TimerSrvIniPath));
                 }
             }
+            listBox_chk_folder.Items.Clear();
+            count = IniFileHandler.GetPrivateProfileInt("DEL_CHK", "Count", 0, SettingPath.TimerSrvIniPath);
+            for (int i = 0; i < count; i++)
+            {
+                listBox_chk_folder.Items.Add(IniFileHandler.GetPrivateProfileFolder("DEL_CHK", i.ToString(), SettingPath.TimerSrvIniPath));
+            }
+
+            checkBox_recname.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "RecNamePlugIn", false, SettingPath.TimerSrvIniPath);
+            if (CommonManager.Instance.IsConnected == true)
+            {
+                CommonManager.Instance.DB.ReloadPlugInFile();
+            }
+            comboBox_recname.ItemsSource = CommonManager.Instance.DB.RecNamePlugInList;
+            comboBox_recname.SelectedItem = IniFileHandler.GetPrivateProfileString("SET", "RecNamePlugInFile", "", SettingPath.TimerSrvIniPath);
+            if (comboBox_recname.SelectedIndex < 0) comboBox_recname.SelectedIndex = 0;
+
+            checkBox_noChkYen.IsChecked = IniFileHandler.GetPrivateProfileBool("SET", "NoChkYen", false, SettingPath.TimerSrvIniPath);
+            delReserveModeRadioBtns = new RadioBtnSelect(grid_delReserve);
+            delReserveModeRadioBtns.Value = IniFileHandler.GetPrivateProfileInt("SET", "DelReserveMode", 2, SettingPath.TimerSrvIniPath);
+
+            checkBox_autoDel_Click(null, null);
+
+            //3 ボタン表示
+            listBox_viewBtn.Items.Clear();
+            listBox_viewBtn.Items.AddItems(StringItem.Items(settings.ViewButtonList.Where(item => buttonItem.Contains(item) == true)));
+            reLoadButtonItem(bxb, buttonItem);
+
+            listBox_viewTask.Items.Clear();
+            listBox_viewTask.Items.AddItems(StringItem.Items(settings.TaskMenuList.Where(item => taskItem.Contains(item) == true)));
+            reLoadButtonItem(bxt, taskItem);
+
+            //5 iEpg
+            listBox_service.ItemsSource = ChSet5.ChListSelected.Select(info => new ServiceViewItem(info));
         }
 
-        private void OnUpdateViewTaskListBox(bool updateAll)
+        public void SaveSetting()
         {
-            var itemList = new List<string> {
-                "（セパレータ）", "設定", "スタンバイ", "休止", "EPG取得", "終了"
-            };
-            if (CommonManager.Instance.NWMode)
+            //0 全般
+            IniFileHandler.WritePrivateProfileString("SET", "ResidentMode",
+                checkBox_srvResident.IsChecked == false ? 0 : checkBox_srvShowTray.IsChecked == false ? 1 : 2, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "NotifyTipStyle", checkBox_NotifyTipStyle.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "BlinkPreRec", checkBox_blinkPreRec.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "NoBalloonTip", checkBox_srvBalloonTip.IsChecked != true ?
+                1 : checkBox_srvBalloonTipRealtime.IsChecked == true ? 2 : 0, SettingPath.TimerSrvIniPath);
+
+            IniFileHandler.WritePrivateProfileString("SET", "SaveNotifyLog", checkBox_srvSaveNotifyLog.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "SaveDebugLog", checkBox_srvSaveDebugLog.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "TSExt", SettingPath.CheckTSExtension(textBox_tsExt.Text), SettingPath.TimerSrvIniPath);
+
+            //1 録画動作
+            IniFileHandler.WritePrivateProfileString("SET", "WakeTime", textBox_pcWakeTime.Text, SettingPath.TimerSrvIniPath);
+
+            List<string> ngProcessList = listBox_process.Items.OfType<string>().ToList();
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "Count", ngProcessList.Count, SettingPath.TimerSrvIniPath);
+            IniFileHandler.DeletePrivateProfileNumberKeys("NO_SUSPEND", SettingPath.TimerSrvIniPath);
+            for (int i = 0; i < ngProcessList.Count; i++)
             {
-                itemList.Add("再接続");
+                IniFileHandler.WritePrivateProfileString("NO_SUSPEND", i.ToString(), ngProcessList[i], SettingPath.TimerSrvIniPath);
             }
-            // コンテキストを更新する
-            var taskMenuList = ((Settings)DataContext).TaskMenuList;
-            taskMenuList.Clear();
-            taskMenuList.AddRange(listBox_viewTask.Items.OfType<string>());
-            if (updateAll)
+
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "NoStandbyTime", textBox_ng_min.Text, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "NoUsePC", checkBox_ng_usePC.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "NoUsePCTime", textBox_ng_usePC_min.Text, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "NoFileStreaming", checkBox_ng_fileStreaming.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("NO_SUSPEND", "NoShareFile", checkBox_ng_shareFile.IsChecked, SettingPath.TimerSrvIniPath);
+
+            IniFileHandler.WritePrivateProfileString("SET", "RecMinWake", checkBox_appMin.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecView"
+                , Convert.ToInt32(checkBox_appOpenViewing.IsChecked)
+                + Convert.ToInt32(checkBox_appOpenRec.IsChecked) * 2
+                + Convert.ToInt32(checkBox_appOpenAlways.IsChecked) * 4, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "DropLog", checkBox_appDrop.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "PgInfoLog", checkBox_addPgInfo.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "PgInfoLogAsUtf8", checkBox_PgInfoLogAsUtf8.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecNW", checkBox_appNW.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "KeepDisk", checkBox_appKeepDisk.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecOverWrite", checkBox_appOverWrite.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "ProcessPriority", comboBox_process.SelectedIndex, SettingPath.TimerSrvIniPath);
+
+            //2 予約管理情報
+            IniFileHandler.WritePrivateProfileString("SET", "BackPriority", checkBox_back_priority.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "FixedTunerPriority", checkBox_fixedTunerPriority.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RetryOtherTuners", checkBox_RetryOtherTuners.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "CommentAutoAdd", checkBox_CommentAutoAdd.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "FixNoRecToServiceOnly", checkBox_FixNoRecToServiceOnly.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecInfoFolderOnly", checkBox_recInfoFolderOnly.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecInfo2RegExp", text_RecInfo2RegExp.Text, "", SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "AutoDelRecInfo", checkBox_autoDelRecInfo.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "AutoDelRecInfoNum", textBox_autoDelRecInfo.Text, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecInfo2Max", textBox_RecInfo2Max.Text, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecInfo2DropChk", textBox_RecInfo2DropChk.Text, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecInfoDelFile", checkBox_recInfoDelFile.IsChecked, false, SettingPath.CommonIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "ApplyExtToRecInfoDel", checkBox_applyExtTo.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "AutoDel", checkBox_autoDel.IsChecked, SettingPath.TimerSrvIniPath);
+
+            List<string> extList = listBox_ext.Items.OfType<string>().ToList();
+            List<string> delChkFolderList = ViewUtil.GetFolderList(listBox_chk_folder);
+            IniFileHandler.WritePrivateProfileString("DEL_EXT", "Count", extList.Count, SettingPath.TimerSrvIniPath);
+            IniFileHandler.DeletePrivateProfileNumberKeys("DEL_EXT", SettingPath.TimerSrvIniPath);
+            for (int i = 0; i < extList.Count; i++)
             {
-                listBox_itemTask.Items.Clear();
-                foreach (string item in itemList)
-                {
-                    // 表示項目にないものだけ追加
-                    if (item == "（セパレータ）" || taskMenuList.IndexOf(item) < 0)
-                    {
-                        listBox_itemTask.Items.Add(item);
-                    }
-                }
+                IniFileHandler.WritePrivateProfileString("DEL_EXT", i.ToString(), extList[i], SettingPath.TimerSrvIniPath);
             }
+            IniFileHandler.WritePrivateProfileString("DEL_CHK", "Count", delChkFolderList.Count, SettingPath.TimerSrvIniPath);
+            IniFileHandler.DeletePrivateProfileNumberKeys("DEL_CHK", SettingPath.TimerSrvIniPath);
+            for (int i = 0; i < delChkFolderList.Count; i++)
+            {
+                IniFileHandler.WritePrivateProfileString("DEL_CHK", i.ToString(), delChkFolderList[i], SettingPath.TimerSrvIniPath);
+            }
+
+            IniFileHandler.WritePrivateProfileString("SET", "RecNamePlugIn", checkBox_recname.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "RecNamePlugInFile", comboBox_recname.SelectedItem, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "NoChkYen", checkBox_noChkYen.IsChecked, SettingPath.TimerSrvIniPath);
+            IniFileHandler.WritePrivateProfileString("SET", "DelReserveMode", delReserveModeRadioBtns.Value, -1, SettingPath.TimerSrvIniPath);
+
+            //3 ボタン表示
+            settings.ViewButtonList = listBox_viewBtn.Items.OfType<StringItem>().ValueList();
+            settings.TaskMenuList = listBox_viewTask.Items.OfType<StringItem>().ValueList();
         }
 
-        private void button_up_Click(object sender, RoutedEventArgs e)
+        private void button_ext_def_Click(object sender, RoutedEventArgs e)
         {
-            var listBox = (ListBox)((Button)sender).Tag;
-            int index = listBox.SelectedIndex;
-            if (index >= 1)
-            {
-                listBox.Items.Insert(index - 1, listBox.SelectedItem);
-                listBox.Items.RemoveAt(index + 1);
-                listBox.SelectedIndex = index - 1;
-                OnUpdateViewButtonListBox(false);
-                OnUpdateViewTaskListBox(false);
-            }
+            ViewUtil.ListBox_TextCheckAdd(listBox_ext, ".ts.err");
+            ViewUtil.ListBox_TextCheckAdd(listBox_ext, ".ts.program.txt");
         }
 
-        private void button_down_Click(object sender, RoutedEventArgs e)
+        private void button_recname_Click(object sender, RoutedEventArgs e)
         {
-            var listBox = (ListBox)((Button)sender).Tag;
-            int index = listBox.SelectedIndex;
-            if (0 <= index && index < listBox.Items.Count - 1)
-            {
-                listBox.Items.Insert(index + 2, listBox.SelectedItem);
-                listBox.Items.RemoveAt(index);
-                listBox.SelectedIndex = index + 1;
-                OnUpdateViewButtonListBox(false);
-                OnUpdateViewTaskListBox(false);
-            }
+            CommonManager.ShowPlugInSetting(comboBox_recname.SelectedItem as string, "RecName", this);
         }
 
-        private void button_btnDel_Click(object sender, RoutedEventArgs e)
+        private void drag_drop(object sender, DragEventArgs e, Button add, Button ins)
         {
-            if (listBox_viewBtn.SelectedItem != null)
-            {
-                if ((string)listBox_viewBtn.SelectedItem == "設定")
-                {
-                    if (listBox_viewTask.Items.OfType<string>().All(a => a != "設定"))
-                    {
-                        MessageBox.Show("設定は上部表示ボタンか右クリック表示項目のどちらかに必要です");
-                        return;
-                    }
-                }
-                listBox_viewBtn.Items.RemoveAt(listBox_viewBtn.SelectedIndex);
-                OnUpdateViewButtonListBox(true);
-            }
+            var handler = (BoxExchangeEditor.GetDragHitItem(sender, e) == null ? add : ins);
+            handler.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }
 
-        private void button_btnAdd_Click(object sender, RoutedEventArgs e)
+        private void button_Add(BoxExchangeEditor bx, List<string> src, bool isInsert = false)
         {
-            if (listBox_itemBtn.SelectedItem != null)
+            int pos = bx.SourceBox.SelectedIndex - bx.SourceBox.SelectedItems.Count;
+            bx.bxAddItems(bx.SourceBox, bx.TargetBox, isInsert);
+            reLoadButtonItem(bx, src);
+            if (bx.SourceBox.Items.Count != 0)
             {
-                listBox_viewBtn.Items.Add(listBox_itemBtn.SelectedItem);
-                OnUpdateViewButtonListBox(true);
+                pos = Math.Max(0, Math.Min(pos, bx.SourceBox.Items.Count - 1));
+                bx.SourceBox.SelectedIndex = pos;//順序がヘンだが、ENTERの場合はこの後に+1処理が入る模様
             }
         }
-
-        private void button_taskDel_Click(object sender, RoutedEventArgs e)
+        private void button_Dell(BoxExchangeEditor bx, BoxExchangeEditor bx_other, List<string> src)
         {
-            if (listBox_viewTask.SelectedItem != null)
+            if (bx.TargetBox.SelectedItem == null) return;
+            //
+            var item1 = bx.TargetBox.SelectedItems.OfType<StringItem>().FirstOrDefault(item => item.Value == "設定");
+            var item2 = bx_other.TargetBox.Items.OfType<StringItem>().FirstOrDefault(item => item.Value == "設定");
+            if (item1 != null && item2 == null)
             {
-                if ((string)listBox_viewTask.SelectedItem == "設定")
-                {
-                    if (listBox_viewBtn.Items.OfType<string>().All(a => a != "設定"))
-                    {
-                        MessageBox.Show("設定は上部表示ボタンか右クリック表示項目のどちらかに必要です");
-                        return;
-                    }
-                }
-                listBox_viewTask.Items.RemoveAt(listBox_viewTask.SelectedIndex);
-                OnUpdateViewTaskListBox(true);
+                MessageBox.Show("設定は上部表示ボタンか右クリック表示項目のどちらかに必要です");
+                return;
             }
+
+            bx.bxDeleteItems(bx.TargetBox);
+            reLoadButtonItem(bx, src);
         }
-
-        private void button_taskAdd_Click(object sender, RoutedEventArgs e)
+        private void button_btnIni_Click(object sender, RoutedEventArgs e)
         {
-            if (listBox_itemTask.SelectedItem != null)
-            {
-                listBox_viewTask.Items.Add(listBox_itemTask.SelectedItem);
-                OnUpdateViewTaskListBox(true);
-            }
+            listBox_viewBtn.Items.Clear();
+            listBox_viewBtn.Items.AddItems(StringItem.Items(Settings.GetViewButtonDefIDs(CommonManager.Instance.NWMode)));
+            reLoadButtonItem(bxb, buttonItem);
+        }
+        private void button_taskIni_Click(object sender, RoutedEventArgs e)
+        {
+            listBox_viewTask.Items.Clear();
+            listBox_viewTask.Items.AddItems(StringItem.Items(Settings.GetTaskMenuDefIDs(CommonManager.Instance.NWMode)));
+            reLoadButtonItem(bxt, taskItem);
+        }
+        private void reLoadButtonItem(BoxExchangeEditor bx, List<string> src)
+        {
+            var viewlist = bx.TargetBox.Items.OfType<StringItem>().Values();
+            var diflist = src.Except(viewlist).ToList();
+            diflist.Insert(0, (bx.DuplicationSpecific.First() as StringItem).Value);
+
+            bx.SourceBox.ItemsSource = StringItem.Items(diflist.Distinct());
         }
 
         private void button_recDef_Click(object sender, RoutedEventArgs e)
         {
-            SetDefRecSettingWindow dlg = new SetDefRecSettingWindow();
-            dlg.Owner = (Window)PresentationSource.FromVisual(this).RootVisual;
-            dlg.ShowDialog();
+            var dlg = new SetRecPresetWindow(this, settings.RecPresetList);
+            if (dlg.ShowDialog() == true)
+            {
+                settings.RecPresetList = dlg.GetPresetList();
+            }
         }
 
         private void button_searchDef_Click(object sender, RoutedEventArgs e)
         {
-            SetDefSearchSettingWindow dlg = new SetDefSearchSettingWindow();
-            dlg.Owner = (Window)PresentationSource.FromVisual(this).RootVisual;
-            dlg.SetDefSetting(((Settings)DataContext).CreateDefSearchSetting());
-
+            var dlg = new SetSearchPresetWindow(this, settings.SearchPresetList);
             if (dlg.ShowDialog() == true)
             {
-                EpgSearchKeyInfo defSearchKey = dlg.GetSetting();
-                var settings = (Settings)DataContext;
-                settings.SearchKeyAndKey = defSearchKey.andKey;
-                settings.SearchKeyNotKey = defSearchKey.notKey;
-                settings.SearchKeyRegExp = defSearchKey.regExpFlag != 0;
-                settings.SearchKeyAimaiFlag = defSearchKey.aimaiFlag != 0;
-                settings.SearchKeyTitleOnly = defSearchKey.titleOnlyFlag != 0;
-                settings.SearchKeyContentList.Clear();
-                foreach (EpgContentData info in defSearchKey.contentList)
-                {
-                    var item = new ContentKindInfo();
-                    item.Nibble1 = info.content_nibble_level_1;
-                    item.Nibble2 = info.content_nibble_level_2;
-                    settings.SearchKeyContentList.Add(item);
-                }
-                settings.SearchKeyDateItemList.Clear();
-                settings.SearchKeyDateItemList.AddRange(defSearchKey.dateList);
-                settings.SearchKeyServiceList.Clear();
-                settings.SearchKeyServiceList.AddRange(defSearchKey.serviceList);
-                settings.SearchKeyNotContent = defSearchKey.notContetFlag != 0;
-                settings.SearchKeyNotDate = defSearchKey.notDateFlag != 0;
-                settings.SearchKeyFreeCA = defSearchKey.freeCAFlag;
-                settings.SearchKeyChkRecEnd = defSearchKey.chkRecEnd;
-                settings.SearchKeyChkRecDay = defSearchKey.chkRecDay;
-            }
-        }
-
-        private void button_shortCutAdd_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string shortcutPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "EpgTime.lnk");
-                if (File.Exists(shortcutPath) == false)
-                {
-                    CreateShortCut(shortcutPath, System.IO.Path.Combine(SettingPath.ModulePath, SettingPath.ModuleName), "");
-                }
-                button_shortCutAdd.Visibility = Visibility.Hidden;
-                button_shortCutDel.Visibility = Visibility.Visible;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_shortCutDel_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string shortcutPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "EpgTime.lnk");
-                if (File.Exists(shortcutPath))
-                {
-                    File.Delete(shortcutPath);
-                }
-                button_shortCutAdd.Visibility = Visibility.Visible;
-                button_shortCutDel.Visibility = Visibility.Hidden;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_srvSetting_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (CommonManager.Instance.SrvSettingProcess == null || CommonManager.Instance.SrvSettingProcess.HasExited)
-                {
-                    CommonManager.Instance.SrvSettingProcess =
-                        System.Diagnostics.Process.Start(System.IO.Path.Combine(SettingPath.ModulePath, "EpgTimerSrv.exe"), "/setting");
-                }
-                else
-                {
-                    CommonUtil.SetForegroundWindow(CommonManager.Instance.SrvSettingProcess.MainWindowHandle);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        /// <summary>
-        /// ショートカットの作成
-        /// </summary>
-        /// <remarks>WSHを使用して、ショートカット(lnkファイル)を作成します。(遅延バインディング)</remarks>
-        /// <param name="path">出力先のファイル名(*.lnk)</param>
-        /// <param name="targetPath">対象のアセンブリ(*.exe)</param>
-        /// <param name="description">説明</param>
-        private void CreateShortCut(string path, string targetPath, string description)
-        {
-            //using System.Reflection;
-
-            // WSHオブジェクトを作成し、CreateShortcutメソッドを実行する
-            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-            object shell = Activator.CreateInstance(shellType);
-            object shortCut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { path });
-
-            Type shortcutType = shell.GetType();
-            // TargetPathプロパティをセットする
-            shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortCut, new object[] { targetPath });
-            shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortCut, new object[] { System.IO.Path.GetDirectoryName(targetPath) });
-            // Descriptionプロパティをセットする
-            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortCut, new object[] { description });
-            // Saveメソッドを実行する
-            shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortCut, null);
-        }
-
-        private void button_exe1_Click(object sender, RoutedEventArgs e)
-        {
-            Microsoft.Win32.OpenFileDialog dlg = new Microsoft.Win32.OpenFileDialog();
-            dlg.DefaultExt = ".exe";
-            dlg.Filter = "exe Files (.exe)|*.exe;|all Files(*.*)|*.*";
-
-            Nullable<bool> result = dlg.ShowDialog();
-            if (result == true)
-            {
-                textBox_exe1.Focus();
-                textBox_exe1.Text = dlg.FileName;
-            }
-        }
-
-        private void button_exe2_Click(object sender, RoutedEventArgs e)
-        {
-            Microsoft.Win32.OpenFileDialog dlg = new Microsoft.Win32.OpenFileDialog();
-            dlg.DefaultExt = ".exe";
-            dlg.Filter = "exe Files (.exe)|*.exe;|all Files(*.*)|*.*";
-
-            Nullable<bool> result = dlg.ShowDialog();
-            if (result == true)
-            {
-                textBox_exe2.Focus();
-                textBox_exe2.Text = dlg.FileName;
+                settings.SearchPresetList = dlg.GetPresetList();
             }
         }
 
         private void ReLoadStation()
         {
             listBox_iEPG.Items.Clear();
-            if (listBox_service.SelectedItem != null)
-            {
-                ServiceViewItem item = listBox_service.SelectedItem as ServiceViewItem;
-                foreach (IEPGStationInfo info in ((Settings)DataContext).IEpgStationList)
-                {
-                    if (info.Key == item.Key)
-                    {
-                        listBox_iEPG.Items.Add(info);
-                    }
-                }
-            }
+            if (listBox_service.SelectedItem == null) return;
+            //
+            var key = (listBox_service.SelectedItem as ServiceViewItem).Key;
+            listBox_iEPG.Items.AddItems(settings.IEpgStationList.Where(item => item.Key == key));
         }
 
         private void button_add_iepg_Click(object sender, RoutedEventArgs e)
         {
-            if (listBox_service.SelectedItem != null)
+            if (listBox_service.SelectedItem == null) return;
+            //
+            if (settings.IEpgStationList.Any(info => info.StationName == textBox_station.Text) == true)
             {
-                ServiceViewItem item = listBox_service.SelectedItem as ServiceViewItem;
-                foreach (IEPGStationInfo info in ((Settings)DataContext).IEpgStationList)
-                {
-                    if (string.Compare(info.StationName, textBox_station.Text, new System.Globalization.CultureInfo("ja-JP"),
-                                       System.Globalization.CompareOptions.IgnoreWidth | System.Globalization.CompareOptions.IgnoreCase) == 0)
-                    {
-                        MessageBox.Show("すでに登録済みです");
-                        return;
-                    }
-                }
-                IEPGStationInfo addItem = new IEPGStationInfo();
-                addItem.StationName = textBox_station.Text;
-                addItem.Key = item.Key;
-
-                ((Settings)DataContext).IEpgStationList.Add(addItem);
-
-                ReLoadStation();
+                MessageBox.Show("すでに追加されています");
+                return;
             }
+            var key = (listBox_service.SelectedItem as ServiceViewItem).Key;
+            settings.IEpgStationList.Add(new IEPGStationInfo { StationName = textBox_station.Text, Key = key });
+            ReLoadStation();
+            listBox_iEPG.ScrollIntoViewLast();
         }
 
         private void button_del_iepg_Click(object sender, RoutedEventArgs e)
         {
-            if (listBox_iEPG.SelectedItem != null)
-            {
-                IEPGStationInfo item = listBox_iEPG.SelectedItem as IEPGStationInfo;
-                ((Settings)DataContext).IEpgStationList.Remove(item);
-                ReLoadStation();
-            }
+            if (listBox_service.SelectedItem == null) return;
+            //
+            listBox_iEPG.SelectedItemsList().ForEach(item => settings.IEpgStationList.Remove(item as IEPGStationInfo));
+            ReLoadStation();
         }
 
         private void listBox_service_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -413,12 +505,17 @@ namespace EpgTimer.Setting
             ReLoadStation();
         }
 
-        private void comboBox_startTab_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void checkBox_autoDel_Click(object sender, RoutedEventArgs e)
         {
-            if (comboBox_startTab.SelectedItem != null)
-            {
-                ((Settings)DataContext).StartTab = (string)((ComboBoxItem)comboBox_startTab.SelectedItem).Tag;
-            }
+            bool chkEnabled = (bool)checkBox_autoDel.IsChecked;
+            bool extEnabled = chkEnabled || (bool)checkBox_recInfoDelFile.IsChecked && (bool)checkBox_applyExtTo.IsChecked;
+            textBox_ext.SetReadOnlyWithEffect(!extEnabled);
+            button_ext_def.IsEnabled = extEnabled;
+            button_ext_del.IsEnabled = extEnabled;
+            button_ext_add.IsEnabled = extEnabled;
+            textBox_chk_folder.SetReadOnlyWithEffect(!chkEnabled);
+            button_chk_del.IsEnabled = chkEnabled;
+            button_chk_add.IsEnabled = chkEnabled;
         }
     }
 }

@@ -1,115 +1,87 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
-using System.ComponentModel;
-using System.Windows.Input;
 
 namespace EpgTimer.TunerReserveViewCtrl
 {
-    class TunerReservePanel : FrameworkElement
+    class TunerReservePanel : ViewPanel
     {
-        public static readonly DependencyProperty BackgroundProperty =
-            Panel.BackgroundProperty.AddOwner(typeof(TunerReservePanel));
-
-        public Brush Background
+        public override void SetBorderStyleFromSettings()
         {
-            set { SetValue(BackgroundProperty, value); }
-            get { return (Brush)GetValue(BackgroundProperty); }
+            SetBorderStyle(Settings.Instance.TunerBorderLeftSize, Settings.Instance.TunerBorderTopSize, new Thickness(2, 0, 2, Settings.Instance.TunerFontSize * 0.8));
+        }
+        protected override Pen BorderPen(PanelItem info)
+        {
+            if (((ReserveViewItem)info).Data.IsWatchMode == false) return null;
+            var pen = new Pen(info.BackColor, borderMax) { DashStyle = Settings.BrushCache.TunerDashStyle };
+            pen.Freeze();
+            return pen;
         }
 
-        public List<ReserveViewItem> Items
+        protected override void CreateDrawTextListMain(List<List<Tuple<Brush, GlyphRun>>> textDrawLists)
         {
-            get;
-            set;
-        }
+            var ItemFontNormal = ItemFontCache.ItemFont(Settings.Instance.TunerFontName, false);
+            var ItemFontTitle = ItemFontCache.ItemFont(Settings.Instance.TunerFontNameService, Settings.Instance.TunerFontBoldService);
+            EpgSetting set = Settings.Instance.EpgSettingList.FirstOrDefault(s => s.ApplyReplacePatternTuner);
+            var DictionaryTitle = set != null ? CommonManager.GetReplaceDictionaryTitle(set) : null;
 
-        protected override void OnRender(DrawingContext dc)
-        {
-            dc.DrawRectangle(Background, null, new Rect(RenderSize));
+            bool recSettingInfo = PopUpMode == true ? Settings.Instance.TunerPopupRecinfo : false;
+            bool noWrap = PopUpMode == true ? false : Settings.Instance.TunerServiceNoWrap;
 
-            var ps = PresentationSource.FromVisual(this);
-            if (ps == null || Items == null)
+            double sizeTitle = Settings.Instance.TunerFontSizeService;
+            double sizeMin = Math.Max(sizeTitle - 1, Math.Min(sizeTitle, Settings.Instance.TunerFontSize));
+            double sizeNormal = Settings.Instance.TunerFontSize;
+            double indentTitle = recSettingInfo ? 0 : sizeMin * CulcRenderWidth("0", ItemFontNormal) * (2 + sizeTitle / sizeMin);
+            double indentHours = sizeMin * CulcRenderWidth("00:", ItemFontNormal);//番組表とは異なるインデントの入れ方にする
+            double indentService;
+            double indentNormal = Settings.Instance.TunerTitleIndent ? indentTitle : 0;
+            Brush colorNormal = Settings.BrushCache.CustTunerTextColor;
+
+            //録画中のものを後で描画する
+            Items = Items.Cast<TunerReserveViewItem>().OrderBy(info => info.Data.IsOnRec()).ToList();
+
+            foreach (TunerReserveViewItem info in Items)
             {
-                return;
-            }
-            Matrix m = ps.CompositionTarget.TransformToDevice;
+                var textDrawList = new List<Tuple<Brush, GlyphRun>>();
+                textDrawLists.Add(textDrawList);
+                Rect drawRect = TextRenderRect(info);
+                double useHeight = 0;
+                indentService = indentTitle;
 
-            var itemFontTitle = new EpgView.EpgViewPanel.ItemFont(Settings.Instance.EpgSettingList[0].FontNameTitle, Settings.Instance.EpgSettingList[0].FontBoldTitle, true);
-            var itemFontNormal = new EpgView.EpgViewPanel.ItemFont(Settings.Instance.EpgSettingList[0].FontName, false, true);
-            if (itemFontTitle.GlyphType == null || itemFontNormal.GlyphType == null)
-            {
-                return;
-            }
-
-            {
-                double sizeTitle = Math.Max(Settings.Instance.EpgSettingList[0].FontSizeTitle, 1);
-                double sizeNormal = Math.Max(Settings.Instance.EpgSettingList[0].FontSize, 1);
-                double indentTitle = sizeTitle * 1.7;
-                double indentNormal = 2;
-                SolidColorBrush colorTitle = ColorDef.CustColorBrush(Settings.Instance.EpgSettingList[0].TitleColor1,
-                                                                     Settings.Instance.EpgSettingList[0].TitleCustColor1);
-                SolidColorBrush colorNormal = ColorDef.CustColorBrush(Settings.Instance.EpgSettingList[0].TitleColor2,
-                                                                      Settings.Instance.EpgSettingList[0].TitleCustColor2);
-
-                foreach (ReserveViewItem info in Items)
+                //追加情報の表示
+                if (recSettingInfo == true)
                 {
-                    var textDrawList = new List<Tuple<Brush, GlyphRun>>();
+                    var resItem = new ReserveItem(info.Data);
+                    string text = info.Status;
+                    if (text != "") useHeight = sizeNormal / 5 + RenderText(textDrawList, text, ItemFontNormal, sizeNormal, drawRect, 0, 0, resItem.StatusColor);
 
-                    double innerLeft = info.LeftPos + 1;
-                    double innerTop = info.TopPos + 1;
-                    double innerWidth = info.Width - 2;
-                    double innerHeight = info.Height - 2;
-                    double useHeight;
-
-                    info.TitleDrawErr = true;
-
-                    //分
-                    string min = info.ReserveInfo.StartTime.Minute.ToString("d02");
-                    //設計的にやや微妙だがやる事が同じなのでEpgViewPanelのメソッドを流用する
-                    if (EpgView.EpgViewPanel.RenderText(min, textDrawList, itemFontTitle, sizeTitle * 0.95,
-                                                        innerWidth - 1, innerHeight,
-                                                        innerLeft + 1, innerTop, out useHeight, colorTitle, m, 0))
-                    {
-                        //サービス名
-                        string serviceName = info.ReserveInfo.StationName;
-                        serviceName += " (" + CommonManager.ConvertNetworkNameText(info.ReserveInfo.OriginalNetworkID) + ")";
-                        if (EpgView.EpgViewPanel.RenderText(serviceName, textDrawList, itemFontTitle, sizeTitle,
-                                                            innerWidth - sizeTitle * 0.5 - indentTitle, innerHeight,
-                                                            innerLeft + indentTitle, innerTop, out useHeight, colorTitle, m, 0))
-                        {
-                            double renderTextHeight = useHeight + sizeNormal * 0.5;
-                            //番組名
-                            if (EpgView.EpgViewPanel.RenderText(info.ReserveInfo.Title, textDrawList, itemFontNormal, sizeNormal,
-                                                                innerWidth - sizeTitle * 0.5 - indentNormal, innerHeight - renderTextHeight,
-                                                                innerLeft + indentNormal, innerTop + renderTextHeight, out useHeight, colorNormal, m, 0))
-                            {
-                                info.TitleDrawErr = innerHeight < renderTextHeight + useHeight;
-                            }
-                        }
-                    }
-
-                    if (info.Width > 0 && info.Height > 0)
-                    {
-                        dc.DrawRectangle(Brushes.LightGray, null, new Rect(info.LeftPos, info.TopPos, info.Width, info.Height));
-                    }
-                    if (innerWidth > 0 && innerHeight > 0)
-                    {
-                        var textArea = new Rect(innerLeft, innerTop, innerWidth, innerHeight);
-                        dc.DrawRectangle(info.ReserveInfo.OverlapMode == 1 ? Brushes.Yellow : Brushes.White, null, textArea);
-                        dc.PushClip(new RectangleGeometry(textArea));
-                        foreach (Tuple<Brush, GlyphRun> txtinfo in textDrawList)
-                        {
-                            dc.DrawGlyphRun(txtinfo.Item1, txtinfo.Item2);
-                        }
-                        dc.Pop();
-                    }
+                    text = resItem.StartTimeShort;
+                    text += "\r\n" + "優先度 : " + resItem.Priority;
+                    text += "\r\n" + "録画モード : " + resItem.RecMode;
+                    useHeight += sizeNormal / 2 + RenderText(textDrawList, text, ItemFontNormal, sizeNormal, drawRect, 0, useHeight, info.ServiceColor);
                 }
+                else
+                {
+                    //分のみ
+                    RenderText(textDrawList, (info.DrawHours ? new DateTime28(info.Data.StartTime).HourMod.ToString("00:") : "") + info.Data.StartTime.ToString("mm"), ItemFontNormal, sizeMin, drawRect, 0, 0, info.ServiceColor);
+                    indentService += info.DrawHours ? indentHours : 0;
+                }
+
+                //サービス名
+                string serviceName = info.Data.StationName + "(" + CommonManager.ConvertNetworkNameText(info.Data.OriginalNetworkID) + ")";
+                serviceName = CommonManager.ReplaceText(serviceName, DictionaryTitle);
+                useHeight += sizeTitle / 3 + RenderText(textDrawList, serviceName, ItemFontTitle, sizeTitle, drawRect, indentService, useHeight, info.ServiceColor, noWrap);
+
+                //番組名
+                if (useHeight < drawRect.Height)
+                {
+                    string title = CommonManager.ReplaceText(info.Data.Title.TrimEnd(), DictionaryTitle);
+                    if (title != "") useHeight += sizeNormal / 3 + RenderText(textDrawList, title, ItemFontNormal, sizeNormal, drawRect, indentNormal, useHeight, colorNormal);
+                }
+
+                SaveMaxRenderHeight(useHeight);
             }
         }
     }

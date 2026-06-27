@@ -3,42 +3,42 @@ TextOptions.TextFormattingMode="Display"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:EpgTimer"
-        Title="EpgTimer" Height="480" Width="640" Loaded="Window_Loaded" Closing="Window_Closing" StateChanged="Window_StateChanged" PreviewDragEnter="Window_PreviewDragEnter" PreviewDrop="Window_PreviewDrop" PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" FontSize="12">
-    <Grid Name="grid_main">
+        Title="EpgTimer" Height="480" Width="640" Loaded="Window_Loaded" Closing="Window_Closing" StateChanged="Window_StateChanged" PreviewDragEnter="Window_PreviewDragEnter" PreviewDrop="Window_PreviewDrop" PreviewKeyDown="Window_PreviewKeyDown" AllowDrop="True" FontSize="12" >
+    <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="auto" />
+            <RowDefinition Height="auto"/>
             <RowDefinition Height="*" />
+            <RowDefinition Height="auto"/>
         </Grid.RowDefinitions>
-        <StackPanel Margin="2,0,0,0" Name="stackPanel_button" Orientation="Horizontal">
-            <Button Click="settingButton_Click" Content="設定" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="searchButton_Click" Content="検索" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="closeButton_Click" Content="終了" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="standbyButton_Click" Content="スタンバイ" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="suspendButton_Click" Content="休止" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="epgCapButton_Click" Content="EPG取得" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="epgReloadButton_Click" Content="EPG再読み込み" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="custum1Button_Click" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Tag="カスタム１" Visibility="Collapsed" />
-            <Button Click="custum2Button_Click" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Tag="カスタム２" Visibility="Collapsed" />
-            <Button Click="nwTVEndButton_Click" Content="NetworkTV終了" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="logViewButton_Click" Content="情報通知ログ" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-            <Button Click="connectButton_Click" Content="再接続" Margin="0,2,4,5" MinHeight="23" MinWidth="75" Visibility="Collapsed" />
-        </StackPanel>
-        <TabControl Name="tabControl_main" Grid.Row="1">
-            <TabItem Header="予約一覧" Name="tabItem_reserve">
-                <local:ReserveView x:Name="reserveView" />
-            </TabItem>
-            <TabItem Header="使用予定チューナー" Name="tabItem_tunerReserve">
-                <local:TunerReserveMainView x:Name="tunerReserveView" />
-            </TabItem>
-            <TabItem Header="録画済み一覧" Name="tabItem_recinfo">
-                <local:RecInfoView x:Name="recInfoView" />
-            </TabItem>
-            <TabItem Header="自動予約登録" Name="tabItem_epgAutoAdd">
-                <local:AutoAddView x:Name="autoAddView" />
-            </TabItem>
-            <TabItem Header="番組表" Name="tabItem_epg">
-                <local:EpgDataView x:Name="epgView" />
-            </TabItem>
-        </TabControl>
+        <WrapPanel Name="stackPanel_button" />
+        <Grid Grid.Row="1">
+            <TabControl Name="tabControl_main">
+                <TabItem Name="tabItem_reserve" Tag="予約一覧">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Name="grid_res_Header">
+                            <TextBlock Margin="0,0,-4,0" Padding="0,0,4,0" Text="予約一覧" />
+                            <Image Margin="4,-2,0,-2" Name="res_icon_Error" Source="Resources/109_AllAnnotations_Error_16x16_72.ico" Visibility="Collapsed" />
+                            <Image Margin="4,-2,0,-2" Name="res_icon_Warning" Source="Resources/109_AllAnnotations_Warning_16x16_72.ico" Visibility="Collapsed" />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <local:ReserveView x:Name="reserveView" />
+                </TabItem>
+                <TabItem Header="使用予定チューナー" Name="tabItem_tunerReserve">
+                    <local:TunerReserveMainView x:Name="tunerReserveView" />
+                </TabItem>
+                <TabItem Header="録画済み一覧" Name="tabItem_recinfo">
+                    <local:RecInfoView x:Name="recInfoView" />
+                </TabItem>
+                <TabItem Header="自動予約登録" Name="tabItem_AutoAdd">
+                    <local:AutoAddView x:Name="autoAddView" />
+                </TabItem>
+                <TabItem Header="番組表" Name="tabItem_epg" />
+            </TabControl>
+            <DockPanel>
+                <TabControl Name="tabEpgDummy" DockPanel.Dock="Top" Visibility="Hidden" />
+                <local:EpgDataView x:Name="epgView" Margin="5,-5,5,5" Visibility="Collapsed" />
+            </DockPanel>
+        </Grid>
+        <local:StatusView Grid.Row="2" x:Name="statusBar" Margin="3" />
     </Grid>
 </Window>

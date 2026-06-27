@@ -1,649 +1,440 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.IO;
-using System.Windows.Interop;
 
 namespace EpgTimer
 {
+    using BoxExchangeEdit;
+    using PresetEditor;
+
     /// <summary>
     /// RecSettingView.xaml の相互作用ロジック
     /// </summary>
-    public partial class RecSettingView : UserControl
+    public partial class RecSettingView : UserControl, IPresetItemView
     {
-        private RecSettingData setDefSetting;
+        public event Action<bool> SelectedPresetChanged = null;
+        private void SelectedPreset_Changed(bool SimpleChanged = true)
+        {
+            if (SelectedPresetChanged != null) SelectedPresetChanged(SimpleChanged);
+        }
+
+        private RecSettingData _recSet;
+        private int recEndMode;
+        private RecSettingData recSetting
+        {
+            get { return _recSet; }
+            set
+            {
+                //デフォルトオプションに対する内部の初期値を修正する。
+                _recSet = value;
+                _recSet.StartMargine = _recSet.StartMarginActual;
+                _recSet.EndMargine = _recSet.EndMarginActual;
+                _recSet.ServiceCaption = _recSet.ServiceCaptionActual;
+                _recSet.ServiceData = _recSet.ServiceDataActual;
+                recEndMode = _recSet.RecEndModeActual;
+                _recSet.RebootFlag = _recSet.RebootFlagActual;
+            }
+        }
+
+        public bool PresetResCompare { get; set; }
+
+        private RadioBtnSelect recEndModeRadioBtns;
+        private bool IsManual = false;
+
+        private PresetEditor<RecPresetItem> preEdit = new PresetEditor<RecPresetItem>();
+        private ComboBox comboBox_preSet;
 
         public RecSettingView()
         {
+            PresetResCompare = false;
+
             InitializeComponent();
 
-            comboBox_tuner.Items.Add(new TunerSelectInfo("自動", 0));
-            foreach (TunerReserveInfo info in CommonManager.Instance.DB.TunerReserveList.Values)
+            if (CommonManager.Instance.NWMode == true)
             {
-                if (info.tunerID != 0xFFFFFFFF)
-                {
-                    comboBox_tuner.Items.Add(new TunerSelectInfo(info.tunerName, info.tunerID));
-                }
+                preEdit.button_add.IsEnabled = false;
+                preEdit.button_chg.IsEnabled = false;
+                preEdit.button_del.IsEnabled = false;
+                preEdit.button_add.ToolTip = "EpgTimerNWからは変更出来ません";
+                preEdit.button_chg.ToolTip = preEdit.button_add.ToolTip;
+                preEdit.button_del.ToolTip = preEdit.button_add.ToolTip;
             }
+
+            recSetting = Settings.Instance.RecPresetList[0].Data.DeepClone();
+
+            comboBox_recMode.ItemsSource = CommonManager.RecModeList;
+            comboBox_priority.ItemsSource = CommonManager.PriorityList;
+
+            recEndModeRadioBtns = new RadioBtnSelect(radioButton_non, radioButton_standby, radioButton_suspend, radioButton_shutdown);
+
+            comboBox_tuner.ItemsSource = new List<TunerSelectInfo> { new TunerSelectInfo("自動", 0) }
+                .Concat(CommonManager.Instance.DB.TunerReserveList.Values
+                .Where(info => info.tunerID != 0xFFFFFFFF)
+                .Select(info => new TunerSelectInfo(info.tunerName, info.tunerID)));
             comboBox_tuner.SelectedIndex = 0;
 
-            foreach (RecPresetItem info in Settings.GetRecPresetList())
-            {
-                comboBox_preSet.Items.Add(info);
-            }
-            comboBox_preSet.SelectedIndex = 0;
+            grid_PresetEdit.Children.Clear();
+            grid_PresetEdit.Children.Add(preEdit);
+            preEdit.Set(this, PresetSelectChanged, PresetEdited, "録画プリセット", SetRecPresetWindow.SettingWithDialog);
+            comboBox_preSet = preEdit.comboBox_preSet;
+            checkBox_setWithoutRecTag.IsChecked = Settings.Instance.SetWithoutRecTag;
 
-            if (CommonManager.Instance.NWMode)
-            {
-                button_bat.IsEnabled = false;
-            }
-            setDefSetting = Settings.CreateRecSetting(0);
-            UpdateView(setDefSetting);
+            var bx = new BoxExchangeEditor(null, listView_recFolder, true, true, true);
+            bx.TargetBox.KeyDown += ViewUtil.KeyDown_Enter(button_recFolderChg);
+            bx.targetBoxAllowDoubleClick(bx.TargetBox, (sender, e) => button_recFolderChg.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            button_recFolderDel.Click += new RoutedEventHandler(bx.button_Delete_Click);
+
+            button_bat.Click += ViewUtil.OpenFileNameDialog(textBox_bat, false, "", ".bat", true);
         }
 
-        private void AddPreset(string name)
-        {
-            RecPresetItem newInfo = new RecPresetItem();
-            newInfo.DisplayName = name;
-            newInfo.ID = 0;
-
-            int index = comboBox_preSet.Items.Add(newInfo);
-            SavePreset(newInfo, GetRecSetting());
-            comboBox_preSet.SelectedIndex = index;
-
-        }
-
-        private void SavePreset(object addOrChgTarget, RecSettingData addOrChgInfo)
-        {
-            var saveList = new List<RecSettingData>();
-            for (int i = 0; i < comboBox_preSet.Items.Count; i++)
-            {
-                RecPresetItem preItem = comboBox_preSet.Items[i] as RecPresetItem;
-                if (preItem == addOrChgTarget)
-                {
-                    // 追加または変更
-                    saveList.Add(addOrChgInfo);
-                    // IDを振りなおす
-                    preItem.ID = (uint)(saveList.Count - 1);
-                }
-                else if (preItem.ID != 0xFFFFFFFF)
-                {
-                    // 現在設定を維持
-                    saveList.Add(Settings.CreateRecSetting(preItem.ID));
-                    // IDを振りなおす
-                    preItem.ID = (uint)(saveList.Count - 1);
-                }
-            }
-
-            if (CommonManager.Instance.NWMode)
-            {
-                IniFileHandler.TouchFileAsUnicode(SettingPath.TimerSrvIniPath);
-            }
-
-            string saveID = "";
-            for (int i = 0; i < saveList.Count; i++)
-            {
-                string defName = "REC_DEF";
-                string defFolderName = "REC_DEF_FOLDER";
-                string defFolder1SegName = "REC_DEF_FOLDER_1SEG";
-                RecSettingData info = saveList[i];
-
-                RecPresetItem preItem = comboBox_preSet.Items.OfType<RecPresetItem>().First(a => a.ID == i);
-                if (preItem.ID != 0)
-                {
-                    defName += preItem.ID.ToString();
-                    defFolderName += preItem.ID.ToString();
-                    defFolder1SegName += preItem.ID.ToString();
-                    saveID += preItem.ID.ToString();
-                    saveID += ",";
-                }
-
-                IniFileHandler.WritePrivateProfileString(defName, "SetName", preItem.DisplayName, SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "RecMode", (info.IsNoRec() ? 5 : info.GetRecMode()).ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "NoRecMode", info.GetRecMode().ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "Priority", info.Priority.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "TuijyuuFlag", info.TuijyuuFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "ServiceMode", info.ServiceMode.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "PittariFlag", info.PittariFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "BatFilePath", info.BatFilePath, SettingPath.TimerSrvIniPath);
-
-                IniFileHandler.WritePrivateProfileString(defFolderName, "Count", info.RecFolderList.Count.ToString(), SettingPath.TimerSrvIniPath);
-                for (int j = 0; j < info.RecFolderList.Count; j++)
-                {
-                    IniFileHandler.WritePrivateProfileString(defFolderName, j.ToString(), info.RecFolderList[j].RecFolder, SettingPath.TimerSrvIniPath);
-                    IniFileHandler.WritePrivateProfileString(defFolderName, "WritePlugIn" + j.ToString(), info.RecFolderList[j].WritePlugIn, SettingPath.TimerSrvIniPath);
-                    IniFileHandler.WritePrivateProfileString(defFolderName, "RecNamePlugIn" + j.ToString(), info.RecFolderList[j].RecNamePlugIn, SettingPath.TimerSrvIniPath);
-                }
-                IniFileHandler.WritePrivateProfileString(defFolder1SegName, "Count", info.PartialRecFolder.Count.ToString(), SettingPath.TimerSrvIniPath);
-                for (int j = 0; j < info.PartialRecFolder.Count; j++)
-                {
-                    IniFileHandler.WritePrivateProfileString(defFolder1SegName, j.ToString(), info.PartialRecFolder[j].RecFolder, SettingPath.TimerSrvIniPath);
-                    IniFileHandler.WritePrivateProfileString(defFolder1SegName, "WritePlugIn" + j.ToString(), info.PartialRecFolder[j].WritePlugIn, SettingPath.TimerSrvIniPath);
-                    IniFileHandler.WritePrivateProfileString(defFolder1SegName, "RecNamePlugIn" + j.ToString(), info.PartialRecFolder[j].RecNamePlugIn, SettingPath.TimerSrvIniPath);
-                }
-
-                IniFileHandler.WritePrivateProfileString(defName, "SuspendMode", info.SuspendMode.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "RebootFlag", info.RebootFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "UseMargineFlag", info.UseMargineFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "StartMargine", info.StartMargine.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "EndMargine", info.EndMargine.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "ContinueRec", info.ContinueRecFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "PartialRec", info.PartialRecFlag.ToString(), SettingPath.TimerSrvIniPath);
-                IniFileHandler.WritePrivateProfileString(defName, "TunerID", info.TunerID.ToString(), SettingPath.TimerSrvIniPath);
-            }
-            IniFileHandler.WritePrivateProfileString("SET", "PresetID", saveID, SettingPath.TimerSrvIniPath);
-        }
+        public void SetData(object data) { SetDefSetting(data as RecSettingData); }
+        public object GetData() { return GetRecSetting(); }
+        public IEnumerable<PresetItem> DefPresetList() { return Settings.Instance.RecPresetList.DeepClone(); }
 
         public void SetViewMode(bool epgMode)
         {
+            IsManual = !epgMode;
             checkBox_tuijyu.IsEnabled = epgMode;
             checkBox_pittari.IsEnabled = epgMode;
         }
 
+        public void SetChangeMode(int chgMode)
+        {
+            switch (chgMode)
+            {
+                case 0:
+                    ViewUtil.SetSpecificChgAppearance(textBox_margineStart);
+                    textBox_margineStart.Focus();
+                    textBox_margineStart.SelectAll();
+                    break;
+                case 1:
+                    ViewUtil.SetSpecificChgAppearance(textBox_margineEnd);
+                    textBox_margineEnd.Focus();
+                    textBox_margineEnd.SelectAll();
+                    break;
+            }
+            stackPanel_PresetEdit.Visibility = chgMode == int.MaxValue ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private enum PresetSelectMode { Normal, SelectOnly, InitLoad };
+        private void PresetEdited(List<RecPresetItem> list, PresetEdit mode)
+        {
+            Settings.Instance.RecPresetList = list;
+            RecPresetItem.SavePresetList(list);
+            SettingWindow.UpdatesInfo("録画プリセット変更");
+            if (CommonManager.Instance.NWMode == false)
+            {
+                CommonManager.CreateSrvCtrl().SendNotifyProfileUpdate();
+                CommonManager.MainWindow.RefreshAllViewsReserveInfo(MainWindow.UpdateViewMode.ReserveInfoNoTuner);
+            }
+            SetCustomPresetDisplayName();
+
+            if (mode == PresetEdit.Set)
+            {
+                preEdit.ChangeSelect(MatchPresetOrDefault() ?? preEdit.Items.Last(), PresetSelectMode.SelectOnly);
+            }
+            SelectedPreset_Changed(false);
+        }
+        private void PresetSelectChanged(RecPresetItem item, object msg)
+        {
+            var code = (msg as PresetSelectMode?) ?? PresetSelectMode.Normal;
+            if (code != PresetSelectMode.SelectOnly)
+            {
+                if (code != PresetSelectMode.InitLoad)
+                {
+                    recSetting = item.Data.DeepClone();
+                }
+                UpdateView();
+            }
+            preEdit.button_chg.IsEnabled = !item.IsCustom && CommonManager.Instance.NWMode == false;
+            preEdit.button_del.IsEnabled = preEdit.button_chg.IsEnabled;
+            SelectedPreset_Changed(code == PresetSelectMode.Normal);
+        }
+
+        //このへんそのうちpreEditに移動か
+        public RecPresetItem MatchPresetOrDefault(RecSettingData data = null)
+        {
+            return (data ?? GetRecSetting()).LookUpPreset(preEdit.Items, IsManual, PresetResCompare);
+        }
+        public RecPresetItem SelectedPreset(bool isCheckData = false)
+        {
+            var select = comboBox_preSet.SelectedItem as RecPresetItem;
+            return (isCheckData == false ? select : MatchPresetOrDefault())
+                ?? new RecPresetItem((select != null ? select.ToString() : "カスタム") + "*", PresetItem.CustomID);
+        }
+
         public void SetDefSetting(RecSettingData set)
         {
-            RecPresetItem preCust = new RecPresetItem();
-            preCust.DisplayName = "登録時";
-            preCust.ID = 0xFFFFFFFF;
-            int index = comboBox_preSet.Items.Add(preCust);
+            if (set == null) return;
+            recSetting = set.DeepClone();
 
-            setDefSetting = set;
-            comboBox_preSet.SelectedIndex = index;
+            //"登録時"を追加する。既存があれば追加前に削除する。検索ダイアログの上下ボタンの移動用のコード。
+            comboBox_preSet.Items.Remove(preEdit.FindPreset(RecPresetItem.CustomID));
+            comboBox_preSet.Items.Add(new RecPresetItem("登録時", RecPresetItem.CustomID, recSetting.DeepClone()));
+            SetCustomPresetDisplayName();
 
-            UpdateView(set);
+            //該当するものがあれば選択、無ければ"登録時"。
+            loadingSetting = true;
+            preEdit.ChangeSelect(MatchPresetOrDefault(recSetting), PresetSelectMode.InitLoad);
+        }
+        public void SetCustomPresetDisplayName()
+        {
+            if (preEdit.Items.Any() == false) return;
+            var cust = preEdit.Items.Last();
+            var chkItem = MatchPresetOrDefault(cust.Data);
+            cust.DisplayName = (chkItem == null || chkItem == cust) ? "登録時" : string.Format("登録時({0})", chkItem.DisplayName);
         }
 
         public RecSettingData GetRecSetting()
         {
             var setInfo = new RecSettingData();
-            setInfo.RecMode = CommonManager.Instance.DB.CombineRecModeAndNoRec((byte)comboBox_recMode.SelectedIndex, checkBox_enabled.IsChecked != true);
+
+            setInfo.IsEnable = checkBox_enabled.IsChecked == true;
+            setInfo.RecMode = (byte)comboBox_recMode.SelectedIndex;
             setInfo.Priority = (byte)(comboBox_priority.SelectedIndex + 1);
             setInfo.TuijyuuFlag = (byte)(checkBox_tuijyu.IsChecked == true ? 1 : 0);
-            if (checkBox_serviceMode.IsChecked == true)
-            {
-                setInfo.ServiceMode = 0;
-            }
-            else
-            {
-                setInfo.ServiceMode = 1;
-                if (checkBox_serviceCaption.IsChecked == true)
-                {
-                    setInfo.ServiceMode |= 0x10;
-                }
-                if (checkBox_serviceData.IsChecked == true)
-                {
-                    setInfo.ServiceMode |= 0x20;
-                }
-            }
             setInfo.PittariFlag = (byte)(checkBox_pittari.IsChecked == true ? 1 : 0);
+
+            setInfo.ServiceModeIsDefault = checkBox_serviceMode.IsChecked == true;
+            setInfo.ServiceCaption = checkBox_serviceCaption.IsChecked == true;
+            setInfo.ServiceData = checkBox_serviceData.IsChecked == true;
+
             setInfo.BatFilePath = textBox_bat.Text;
+            setInfo.RecTag = textBox_recTag.Text;
+            setInfo.RecFolderList.Clear();
+            setInfo.PartialRecFolder.Clear();
             foreach (RecFileSetInfoView view in listView_recFolder.Items)
             {
                 (view.PartialRec ? setInfo.PartialRecFolder : setInfo.RecFolderList).Add(view.Info);
             }
-            if (checkBox_suspendDef.IsChecked == true)
-            {
-                setInfo.SuspendMode = 0;
-                setInfo.RebootFlag = 0;
-            }
-            else
-            {
-                setInfo.SuspendMode = 0;
-                if (radioButton_standby.IsChecked == true)
-                {
-                    setInfo.SuspendMode = 1;
-                }
-                else if (radioButton_supend.IsChecked == true)
-                {
-                    setInfo.SuspendMode = 2;
-                }
-                else if (radioButton_shutdown.IsChecked == true)
-                {
-                    setInfo.SuspendMode = 3;
-                }
-                else if (radioButton_non.IsChecked == true)
-                {
-                    setInfo.SuspendMode = 4;
-                }
 
-                if (checkBox_reboot.IsChecked == true)
-                {
-                    setInfo.RebootFlag = 1;
-                }
-                else
-                {
-                    setInfo.RebootFlag = 0;
-                }
-            }
-            if (checkBox_margineDef.IsChecked == true)
-            {
-                setInfo.UseMargineFlag = 0;
-            }
-            else
-            {
-                setInfo.UseMargineFlag = 1;
-                if (textBox_margineStart.Text.Length == 0 || textBox_margineEnd.Text.Length == 0)
-                {
-                    setInfo.StartMargine = 0;
-                    setInfo.EndMargine = 0;
-                }
-                else
-                {
-                    int startSec = 0;
-                    int startMinus = 1;
-                    if (textBox_margineStart.Text.StartsWith("-", StringComparison.Ordinal))
-                    {
-                        startMinus = -1;
-                    }
-                    string[] startArray = textBox_margineStart.Text.Split(':');
-                    if (startArray.Length == 2)
-                    {
-                        startSec = Convert.ToInt32(startArray[0]) * 60;
-                        startSec += Convert.ToInt32(startArray[1]) * startMinus;
-                    }
-                    else if (startArray.Length == 3)
-                    {
-                        startSec = Convert.ToInt32(startArray[0]) * 60 * 60;
-                        startSec += Convert.ToInt32(startArray[1]) * 60 * startMinus;
-                        startSec += Convert.ToInt32(startArray[2]) * startMinus;
-                    }
-                    else
-                    {
-                        startSec = Convert.ToInt32(startArray[0]);
-                    }
+            setInfo.SetSuspendMode(checkBox_suspendDef.IsChecked == true, recEndModeRadioBtns.Value);
+            setInfo.RebootFlag = (byte)(checkBox_reboot.IsChecked == true ? 1 : 0);
 
-                    int endSec = 0;
-                    int endMinus = 1;
-                    if (textBox_margineEnd.Text.StartsWith("-", StringComparison.Ordinal))
-                    {
-                        endMinus = -1;
-                    }
-                    string[] endArray = textBox_margineEnd.Text.Split(':');
-                    if (endArray.Length == 2)
-                    {
-                        endSec = Convert.ToInt32(endArray[0]) * 60;
-                        endSec += Convert.ToInt32(endArray[1]) * endMinus;
-                    }
-                    else if (endArray.Length == 3)
-                    {
-                        endSec = Convert.ToInt32(endArray[0]) * 60 * 60;
-                        endSec += Convert.ToInt32(endArray[1]) * 60 * endMinus;
-                        endSec += Convert.ToInt32(endArray[2]) * endMinus;
-                    }
-                    else
-                    {
-                        endSec = Convert.ToInt32(endArray[0]);
-                    }
+            setInfo.IsMarginDefault = checkBox_margineDef.IsChecked == true;
+            setInfo.StartMargine = GetMargin(textBox_margineStart.Text);
+            setInfo.EndMargine = GetMargin(textBox_margineEnd.Text);
 
-                    setInfo.StartMargine = startSec;
-                    setInfo.EndMargine = endSec;
-                }
-            }
-            if (checkBox_partial.IsChecked == true)
-            {
-                setInfo.PartialRecFlag = 1;
-            }
-            else
-            {
-                setInfo.PartialRecFlag = 0;
-            }
-            if (checkBox_continueRec.IsChecked == true)
-            {
-                setInfo.ContinueRecFlag = 1;
-            }
-            else
-            {
-                setInfo.ContinueRecFlag = 0;
-            }
+            setInfo.PartialRecFlag = (byte)(checkBox_partial.IsChecked == true ? 1 : 0);
+            setInfo.ContinueRecFlag = (byte)(checkBox_continueRec.IsChecked == true ? 1 : 0);
+            setInfo.TunerID = (uint)(comboBox_tuner.SelectedValue ?? 0u);
 
-            TunerSelectInfo tuner = comboBox_tuner.SelectedItem as TunerSelectInfo;
-            setInfo.TunerID = tuner.ID;
             return setInfo;
         }
 
-        private void comboBox_preSet_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private static int GetMargin(string text)
         {
             try
             {
-                if (comboBox_preSet.SelectedItem != null)
+                if (text.Length == 0) return 0;
+
+                int marginSec = 0;
+                int marginMinus = 1;
+                if (text.StartsWith("-", StringComparison.Ordinal) == true)
                 {
-                    RecPresetItem item = comboBox_preSet.SelectedItem as RecPresetItem;
-                    UpdateView(item.ID == 0xFFFFFFFF ? setDefSetting : Settings.CreateRecSetting(item.ID));
+                    marginMinus = -1;
+                    text = text.Substring(1);
                 }
+                string[] startArray = text.Split(':');
+                startArray = startArray.Take(Math.Min(startArray.Length, 3)).Reverse().ToArray();
+                for (int i = 0; i < startArray.Length; i++)
+                {
+                    marginSec += Convert.ToInt32(startArray[i]) * (int)Math.Pow(60, i);
+                }
+
+                return marginMinus * marginSec;
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+            catch { }
+            return 0;
         }
 
-        private void UpdateView(RecSettingData recSetting)
+        private bool loadingSetting = true;
+        private bool OnUpdatingView = false;
+        private void UpdateView()
         {
+            OnUpdatingView = true;
             try
             {
-                checkBox_enabled.IsChecked = recSetting.IsNoRec() == false;
-                comboBox_recMode.SelectedIndex = recSetting.GetRecMode();
+                checkBox_enabled.IsChecked = recSetting.IsEnable;
+                comboBox_recMode.SelectedIndex = Math.Min((int)recSetting.RecMode, 4);
                 comboBox_priority.SelectedIndex = Math.Min(Math.Max((int)recSetting.Priority, 1), 5) - 1;
-                checkBox_tuijyu.IsChecked = recSetting.TuijyuuFlag != 0;
-
-                if ((recSetting.ServiceMode & 0x01) == 0)
-                {
-                    checkBox_serviceMode.IsChecked = true;
-                    if (CommonManager.Instance.DB.DefaultRecSetting != null)
-                    {
-                        checkBox_serviceCaption.IsChecked = (CommonManager.Instance.DB.DefaultRecSetting.ServiceMode & 0x10) != 0;
-                        checkBox_serviceData.IsChecked = (CommonManager.Instance.DB.DefaultRecSetting.ServiceMode & 0x20) != 0;
-                    }
-                }
-                else
-                {
-                    checkBox_serviceMode.IsChecked = false;
-                    checkBox_serviceCaption.IsChecked = (recSetting.ServiceMode & 0x10) != 0;
-                    checkBox_serviceData.IsChecked = (recSetting.ServiceMode & 0x20) != 0;
-                }
-
-                checkBox_pittari.IsChecked = recSetting.PittariFlag != 0;
-
+                checkBox_tuijyu.IsChecked = recSetting.TuijyuuFlag == 1;
+                checkBox_pittari.IsChecked = recSetting.PittariFlag == 1;
+                checkBox_serviceMode.IsChecked = null;//切り替え時のイベント発生のために必要
+                checkBox_serviceMode.IsChecked = recSetting.ServiceModeIsDefault;
                 textBox_bat.Text = recSetting.BatFilePath;
+                if (loadingSetting == true || checkBox_setWithoutRecTag.IsChecked == false)
+                {
+                    textBox_recTag.Text = recSetting.RecTag;
+                }
 
                 listView_recFolder.Items.Clear();
                 foreach (RecFileSetInfo info in recSetting.RecFolderList)
                 {
-                    listView_recFolder.Items.Add(new RecFileSetInfoView(GetCopyRecFileSetInfo(info), false));
+                    listView_recFolder.Items.Add(new RecFileSetInfoView(info.DeepClone(), false));
                 }
                 foreach (RecFileSetInfo info in recSetting.PartialRecFolder)
                 {
-                    listView_recFolder.Items.Add(new RecFileSetInfoView(GetCopyRecFileSetInfo(info), true));
+                    listView_recFolder.Items.Add(new RecFileSetInfoView(info.DeepClone(), true));
                 }
+                listView_recFolder.FitColumnWidth();
 
-                if (recSetting.SuspendMode == 0)
+                checkBox_suspendDef.IsChecked = null;//切り替え時のイベント発生のために必要
+                checkBox_suspendDef.IsChecked = recSetting.RecEndIsDefault;
+                checkBox_margineDef.IsChecked = null;//切り替え時のイベント発生のために必要
+                checkBox_margineDef.IsChecked = recSetting.IsMarginDefault;
+                checkBox_continueRec.IsChecked = (recSetting.ContinueRecFlag == 1);
+                checkBox_partial.IsChecked = (recSetting.PartialRecFlag == 1);
+                comboBox_tuner.SelectedValue = recSetting.TunerID;
+                if (comboBox_tuner.SelectedValue == null)
                 {
-                    checkBox_suspendDef.IsChecked = true;
-                    checkBox_reboot.IsChecked = false;
-                    if (CommonManager.Instance.DB.DefaultRecSetting != null)
-                    {
-                        radioButton_standby.IsChecked = CommonManager.Instance.DB.DefaultRecSetting.SuspendMode == 1;
-                        radioButton_supend.IsChecked = CommonManager.Instance.DB.DefaultRecSetting.SuspendMode == 2;
-                        radioButton_shutdown.IsChecked = CommonManager.Instance.DB.DefaultRecSetting.SuspendMode == 3;
-                        radioButton_non.IsChecked = CommonManager.Instance.DB.DefaultRecSetting.SuspendMode == 4;
-                        checkBox_reboot.IsChecked = CommonManager.Instance.DB.DefaultRecSetting.RebootFlag != 0;
-                    }
-                }
-                else
-                {
-                    checkBox_suspendDef.IsChecked = false;
-                    radioButton_standby.IsChecked = recSetting.SuspendMode == 1;
-                    radioButton_supend.IsChecked = recSetting.SuspendMode == 2;
-                    radioButton_shutdown.IsChecked = recSetting.SuspendMode == 3;
-                    radioButton_non.IsChecked = recSetting.SuspendMode == 4;
-                    checkBox_reboot.IsChecked = recSetting.RebootFlag != 0;
-                }
-                if (recSetting.UseMargineFlag == 0)
-                {
-                    checkBox_margineDef.IsChecked = true;
-                    if (CommonManager.Instance.DB.DefaultRecSetting != null)
-                    {
-                        textBox_margineStart.Text = CommonManager.Instance.DB.DefaultRecSetting.StartMargine.ToString();
-                        textBox_margineEnd.Text = CommonManager.Instance.DB.DefaultRecSetting.EndMargine.ToString();
-                    }
-                }
-                else
-                {
-                    checkBox_margineDef.IsChecked = false;
-                    textBox_margineStart.Text = recSetting.StartMargine.ToString();
-                    textBox_margineEnd.Text = recSetting.EndMargine.ToString();
-                }
-
-                if (recSetting.ContinueRecFlag == 1)
-                {
-                    checkBox_continueRec.IsChecked = true;
-                }
-                else
-                {
-                    checkBox_continueRec.IsChecked = false;
-                }
-                if (recSetting.PartialRecFlag == 1)
-                {
-                    checkBox_partial.IsChecked = true;
-                }
-                else
-                {
-                    checkBox_partial.IsChecked = false;
-                }
-
-                foreach (TunerSelectInfo info in comboBox_tuner.Items)
-                {
-                    if (info.ID == recSetting.TunerID)
-                    {
-                        comboBox_tuner.SelectedItem = info;
-                        break;
-                    }
+                    comboBox_tuner.ItemsSource = comboBox_tuner.ItemsSource.Cast<TunerSelectInfo>().Concat(new TunerSelectInfo("不明なチューナー", recSetting.TunerID).IntoList());
+                    comboBox_tuner.SelectedValue = recSetting.TunerID;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+            loadingSetting = false;
+            OnUpdatingView = false;
+        }
+        public void RefreshView()
+        {
+            if (checkBox_margineDef.IsChecked == true)
             {
-                MessageBox.Show(ex.ToString());
+                textBox_margineStart.Text = Settings.Instance.DefStartMargin.ToString();
+                textBox_margineEnd.Text = Settings.Instance.DefEndMargin.ToString();
+            }
+            if (checkBox_serviceMode.IsChecked == true)
+            {
+                checkBox_serviceCaption.IsChecked = Settings.Instance.DefServiceCaption;
+                checkBox_serviceData.IsChecked = Settings.Instance.DefServiceData;
+            }
+            if (checkBox_suspendDef.IsChecked == true)
+            {
+                recEndModeRadioBtns.Value = Settings.Instance.DefRecEndMode;
+                checkBox_reboot.IsChecked = Settings.Instance.DefRebootFlg == 1;
             }
         }
 
-        private RecFileSetInfo GetCopyRecFileSetInfo(RecFileSetInfo info)
+        private void checkBox_margineDef_Checked(object sender, RoutedEventArgs e)
         {
-            var info_copy = new RecFileSetInfo();
-            info_copy.RecFileName = info.RecFileName;
-            info_copy.RecFolder = info.RecFolder;
-            info_copy.RecNamePlugIn = info.RecNamePlugIn;
-            info_copy.WritePlugIn = info.WritePlugIn;
-            return info_copy;
+            RecSettingData recSet = recSetting.DeepClone();
+            recSet.IsMarginDefault = checkBox_margineDef.IsChecked == true;
+            if (recSet.IsMarginDefault == true && OnUpdatingView == false)
+            {
+                recSetting.StartMargine = GetMargin(textBox_margineStart.Text);
+                recSetting.EndMargine = GetMargin(textBox_margineEnd.Text);
+            }
+            textBox_margineStart.Text = recSet.StartMarginActual.ToString();
+            textBox_margineEnd.Text = recSet.EndMarginActual.ToString();
         }
 
-        private class RecFileSetInfoView
+        private void checkBox_serviceMode_Checked(object sender, RoutedEventArgs e)
         {
-            public RecFileSetInfoView(RecFileSetInfo info, bool partialRec) { Info = info; PartialRec = partialRec; }
-            public string RecFileName { get { return Info.RecFileName; } }
-            public string RecFolder { get { return Info.RecFolder; } }
-            public string RecNamePlugIn { get { return Info.RecNamePlugIn; } }
-            public string WritePlugIn { get { return Info.WritePlugIn; } }
-            public RecFileSetInfo Info { get; private set; }
-            public bool PartialRec { get; private set; }
-            public string PartialRecYesNo { get { return PartialRec ? "はい" : "いいえ"; } }
+            RecSettingData recSet = recSetting.DeepClone();
+            recSet.ServiceModeIsDefault = checkBox_serviceMode.IsChecked == true;
+            if (recSet.ServiceModeIsDefault == true && OnUpdatingView == false)
+            {
+                recSetting.ServiceCaption = checkBox_serviceCaption.IsChecked == true;
+                recSetting.ServiceData = checkBox_serviceData.IsChecked == true;
+            }
+            checkBox_serviceCaption.IsChecked = recSet.ServiceCaptionActual;
+            checkBox_serviceData.IsChecked = recSet.ServiceDataActual;
         }
 
-        private void button_bat_Click(object sender, RoutedEventArgs e)
+        private void checkBox_suspendDef_Checked(object sender, RoutedEventArgs e)
         {
-            Microsoft.Win32.OpenFileDialog dlg = new Microsoft.Win32.OpenFileDialog();
-            dlg.DefaultExt = ".bat";
-            dlg.Filter = "batch Files(*.bat;*.ps1;*.lua)|*.bat;*.ps1;*.lua|all Files(*.*)|*.*";
-
-            Nullable<bool> result = dlg.ShowDialog();
-            if (result == true)
+            RecSettingData recSet = recSetting.DeepClone();
+            recSet.SetSuspendMode(checkBox_suspendDef.IsChecked == true, recEndMode);
+            if (recSet.RecEndIsDefault == true && OnUpdatingView == false)
             {
-                textBox_bat.Text = dlg.FileName;
+                recEndMode = recEndModeRadioBtns.Value;
+                recSetting.RebootFlag = (byte)(checkBox_reboot.IsChecked == true ? 1 : 0);
             }
-        }
-
-        private void button_recFolderAdd_Click(object sender, RoutedEventArgs e)
-        {
-            RecFolderWindow setting = new RecFolderWindow();
-            PresentationSource topWindow = PresentationSource.FromVisual(this);
-            if (topWindow != null)
-            {
-                setting.Owner = (Window)topWindow.RootVisual;
-            }
-            if (setting.ShowDialog() == true)
-            {
-                RecFileSetInfo setInfo = setting.GetSetting();
-                foreach (RecFileSetInfoView info in listView_recFolder.Items)
-                {
-                    if (info.PartialRec == false &&
-                        setInfo.RecFolder.Equals(info.RecFolder, StringComparison.OrdinalIgnoreCase) &&
-                        setInfo.WritePlugIn.Equals(info.WritePlugIn, StringComparison.OrdinalIgnoreCase) &&
-                        setInfo.RecNamePlugIn.Equals(info.RecNamePlugIn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        MessageBox.Show("すでに追加されています");
-                        return;
-                    }
-                }
-                listView_recFolder.Items.Add(new RecFileSetInfoView(setInfo, false));
-            }
-
+            recEndModeRadioBtns.Value = recSet.RecEndModeActual;
+            checkBox_reboot.IsChecked = recSet.RebootFlagActual == 1;
         }
 
         private void button_recFolderChg_Click(object sender, RoutedEventArgs e)
         {
-            if (listView_recFolder.SelectedItem != null)
+            if (listView_recFolder.SelectedItem == null)
             {
-                RecFolderWindow setting = new RecFolderWindow();
-                PresentationSource topWindow = PresentationSource.FromVisual(this);
-                if (topWindow != null)
-                {
-                    setting.Owner = (Window)topWindow.RootVisual;
-                }
-                var item = (RecFileSetInfoView)listView_recFolder.SelectedItem;
-                setting.SetDefSetting(item.Info);
+                listView_recFolder.SelectedIndex = 0;
+            }
+            var selectInfo = listView_recFolder.SelectedItem as RecFileSetInfoView;
+            if (selectInfo != null)
+            {
+                var setting = new RecFolderWindow { Owner = CommonUtil.GetTopWindow(this) };
+                setting.SetDefSetting(selectInfo);
                 if (setting.ShowDialog() == true)
                 {
-                    listView_recFolder.SelectedItem =
-                        listView_recFolder.Items[listView_recFolder.SelectedIndex] = new RecFileSetInfoView(setting.GetSetting(), item.PartialRec);
+                    listView_recFolder.SelectedItem = 
+                        listView_recFolder.Items[listView_recFolder.SelectedIndex] = setting.GetSetting();
+                    listView_recFolder.FitColumnWidth();
                 }
             }
-
-        }
-        
-        private void button_recFolderDel_Click(object sender, RoutedEventArgs e)
-        {
-            if (listView_recFolder.SelectedItem != null)
+            else
             {
-                listView_recFolder.Items.RemoveAt(listView_recFolder.SelectedIndex);
+                button_recFolderAdd_Click(null, null);
             }
         }
-
-        private void button_del_preset_Click(object sender, RoutedEventArgs e)
+        private void button_recFolderCopy_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (comboBox_preSet.SelectedItem != null)
-                {
-                    RecPresetItem item = comboBox_preSet.SelectedItem as RecPresetItem;
-                    if (item.ID == 0)
-                    {
-                        MessageBox.Show("デフォルトは削除できません");
-                        return;
-                    }
-                    else if (item.ID == 0xFFFFFFFF)
-                    {
-                        MessageBox.Show("このプリセットは変更できません");
-                        return;
-                    }
-                    else
-                    {
-                        comboBox_preSet.Items.Remove(item);
-                        comboBox_preSet.SelectedIndex = 0;
-                        SavePreset(null, null);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+            if (listView_recFolder.SelectedItem == null) return;
+            var items = listView_recFolder.SelectedItems.OfType<RecFileSetInfoView>().Select(item => new RecFileSetInfoView(item.Info.DeepClone(), item.PartialRec));
+            listView_recFolder.ScrollIntoViewLast(items);
         }
-
-        private void button_add_preset_Click(object sender, RoutedEventArgs e)
+        private void button_recFolderAdd_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                AddPresetWindow setting = new AddPresetWindow();
-                PresentationSource topWindow = PresentationSource.FromVisual(this);
-                if (topWindow != null)
-                {
-                    setting.Owner = (Window)topWindow.RootVisual;
-                }
-                if (setting.ShowDialog() == true)
-                {
-                    AddPreset(setting.PresetName);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_chg_preset_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (comboBox_preSet.SelectedItem != null)
-                {
-                    RecPresetItem item = comboBox_preSet.SelectedItem as RecPresetItem;
-
-                    if (item.ID == 0xFFFFFFFF)
-                    {
-                        MessageBox.Show("このプリセットは変更できません");
-                        return;
-                    }
-
-                    AddPresetWindow setting = new AddPresetWindow();
-                    PresentationSource topWindow = PresentationSource.FromVisual(this);
-                    if (topWindow != null)
-                    {
-                        setting.Owner = (Window)topWindow.RootVisual;
-                    }
-                    setting.SetMode(true);
-                    setting.PresetName = item.DisplayName;
-                    if (setting.ShowDialog() == true)
-                    {
-                        item.DisplayName = setting.PresetName;
-                        SavePreset(item, GetRecSetting());
-
-                        comboBox_preSet.Items.Refresh();
-                        comboBox_preSet.SelectedItem = null;
-                        comboBox_preSet.SelectedItem = item;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_recFolderAdd_1seg_Click(object sender, RoutedEventArgs e)
-        {
-            RecFolderWindow setting = new RecFolderWindow();
-            PresentationSource topWindow = PresentationSource.FromVisual(this);
-            if (topWindow != null)
-            {
-                setting.Owner = (Window)topWindow.RootVisual;
-            }
+            var setting = new RecFolderWindow { Owner = CommonUtil.GetTopWindow(this) };
             if (setting.ShowDialog() == true)
             {
-                RecFileSetInfo setInfo = setting.GetSetting();
-                foreach (RecFileSetInfoView info in listView_recFolder.Items)
-                {
-                    if (info.PartialRec &&
-                        setInfo.RecFolder.Equals(info.RecFolder, StringComparison.OrdinalIgnoreCase) &&
-                        setInfo.WritePlugIn.Equals(info.WritePlugIn, StringComparison.OrdinalIgnoreCase) &&
-                        setInfo.RecNamePlugIn.Equals(info.RecNamePlugIn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        MessageBox.Show("すでに追加されています");
-                        return;
-                    }
-                }
-                listView_recFolder.Items.Add(new RecFileSetInfoView(setInfo, true));
+                listView_recFolder.ScrollIntoViewLast(setting.GetSetting());
+                listView_recFolder.FitColumnWidth();
             }
         }
 
+        public string GetRecSettingHeaderString(bool SimpleChanged = true)
+        {
+            string preset_str = "";
+            if (Settings.Instance.DisplayPresetOnSearch == true)
+            {
+                preset_str = string.Format(" - {0}", this.SelectedPreset(!SimpleChanged).ToString());
+            }
+            return preset_str;
+        }
 
+        public ContextMenu CreatePresetSlelectMenu()
+        {
+            SelectedPreset_Changed(false);//状態の確定
+            RecSettingData setting = GetRecSetting();
+            bool chk = false;
+            return preEdit.CreateSlelectMenu(item => !chk && (chk = setting.EqualsSettingTo(item.Data, IsManual, PresetResCompare)));
+        }
+        public void OpenPresetSelectMenuOnMouseEvent(object sender, MouseButtonEventArgs e)
+        {
+            if (Settings.Instance.DisplayPresetOnSearch == false) return;
+            CreatePresetSlelectMenu().IsOpen = true;
+        }
+
+        private void checkBox_setWithoutRecTag_Click(object sender, RoutedEventArgs e)
+        {
+            //これはダイアログの設定なので即座に反映。
+            Settings.Instance.SetWithoutRecTag = (checkBox_setWithoutRecTag.IsChecked == true);
+        }
+    }
+
+    public class RecFileSetInfoView
+    {
+        public RecFileSetInfoView(RecFileSetInfo info, bool partialRec = false) { Info = info; PartialRec = partialRec; }
+        public RecFileSetInfo Info { get; set; }
+        public bool PartialRec { get; set; }
+        public string RecFileName { get { return Info.RecFileName; } }
+        public string RecFolder { get { return Info.RecFolder.Equals("!Default", StringComparison.OrdinalIgnoreCase) == true ? "" : Info.RecFolder; } }
+        public string RecNamePlugIn { get { return Info.RecNamePlugIn; } }
+        public string WritePlugIn { get { return Info.WritePlugIn; } }
+        public string PartialRecYesNo { get { return PartialRec ? "はい" : "いいえ"; } }
     }
 }

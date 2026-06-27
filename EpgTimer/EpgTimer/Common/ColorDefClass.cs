@@ -9,22 +9,21 @@ namespace EpgTimer
 {
     public static class ColorDef
     {
-        public static SortedList<string, SolidColorBrush> BrushNames { get; private set; }
-
-        static ColorDef()
+        public static Color ColorFromName(string name)
         {
-            BrushNames = new SortedList<string, SolidColorBrush>();
-            foreach (PropertyInfo prop in typeof(Brushes).GetProperties())
+            try
             {
-                BrushNames[prop.Name] = (SolidColorBrush)prop.GetValue(null, null);
+                return (Color)ColorConverter.ConvertFromString(name);//#形式でも大丈夫
+                //return (Color)typeof(Colors).GetProperty(name).GetValue(null, null);
             }
-            BrushNames["カスタム"] = Brushes.Transparent;
+            catch
+            {
+                return Colors.White;
+            }
         }
+        //未使用
+        //public static SolidColorBrush BrushFromName(string name) { return new SolidColorBrush(ColorFromName(name)); }
 
-        public static SolidColorBrush BrushFromName(string name)
-        {
-            return BrushNames.ContainsKey(name) ? BrushNames[name] : Brushes.White;
-        }
         public static Color FromUInt(uint value)
         {
             return Color.FromArgb((byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value);
@@ -32,10 +31,6 @@ namespace EpgTimer
         public static uint ToUInt(Color c)
         {
             return ((uint)c.A) << 24 | ((uint)c.R) << 16 | ((uint)c.G) << 8 | (uint)c.B;
-        }
-        public static double GetLuminance(Color c)
-        {
-            return (0.298912 * c.R + 0.586611 * c.G + 0.114478 * c.B) / 255;
         }
 
         public static LinearGradientBrush GradientBrush(Color color, double luminance = 0.94, double saturation = 1.2)
@@ -63,37 +58,26 @@ namespace EpgTimer
             g = Math.Min(g, 255);
             b = Math.Min(b, 255);
 
-            Color color2 = Color.FromArgb(color.A, (byte)r, (byte)g, (byte)b);
+            var color2 = Color.FromArgb(color.A, (byte)r, (byte)g, (byte)b);
             
-            LinearGradientBrush brush = new LinearGradientBrush();
+            var brush = new LinearGradientBrush();
             brush.StartPoint = new Point(0, 0.5);
             brush.EndPoint = new Point(0, 1);
             brush.GradientStops.Add(new GradientStop(color, 0.0));
             brush.GradientStops.Add(new GradientStop(color2, 1.0));
             brush.Freeze();
-
             return brush;
         }
 
-        public static SolidColorBrush CustColorBrush(string name, uint cust, byte a = 0xFF, int opacity = 100)
+        //単純なRGB差。本当はlabとかいろいろあるけど今はこれで構わない
+        public static double ColorDiff(Color c1, Color c2)
         {
-            SolidColorBrush brush;
-            if (name == "カスタム")
-            {
-                Color c = FromUInt(cust);
-                brush = new SolidColorBrush(Color.FromArgb((byte)(c.A * opacity / 100), c.R, c.G, c.B));
-                brush.Freeze();
-            }
-            else
-            {
-                brush = BrushFromName(name);
-                if (brush.Color.A != 0 && (a != 0xFF || opacity != 100))
-                {
-                    brush = new SolidColorBrush(Color.FromArgb((byte)(a * opacity / 100), brush.Color.R, brush.Color.G, brush.Color.B));
-                    brush.Freeze();
-                }
-            }
-            return brush;
+            return Math.Abs(c1.A - c2.A) / 256.0 + Math.Abs(c1.R - c2.R) + Math.Abs(c1.G - c2.G) + Math.Abs(c1.B - c2.B);
+        }
+        public static int SelectNearColor(IEnumerable<Color> list, Color c)
+        {
+            var diffs = list.Select(c1 => ColorDiff(c1, c)).ToList();
+            return diffs.IndexOf(diffs.Min());
         }
     }
 }

@@ -2,114 +2,196 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace EpgTimer
 {
+    using EpgView;
+
     /// <summary>
     /// RecInfoDescWindow.xaml の相互作用ロジック
     /// </summary>
-    public partial class RecInfoDescWindow : Window
+    public partial class RecInfoDescWindow : RecInfoDescWindowBase
     {
-        private RecFileInfo recInfo = null;
-        private string pgInfoForProgramText = "";
+        protected override ulong DataID { get { return recInfo.ID; } }
+        protected override IEnumerable<KeyValuePair<ulong, object>> DataRefList { get { return CommonManager.Instance.DB.RecFileInfo.Select(d => new KeyValuePair<ulong, object>(d.Key, d.Value)); } }
+        protected override DataItemViewBase DataView { get { return base.DataView ?? mainWindow.recInfoView; } }
 
-        public RecInfoDescWindow()
+        private RecFileInfo recInfo = new RecFileInfo();
+        private CmdExeRecinfo mc;
+
+        public RecInfoDescWindow(RecFileInfo info = null)
         {
             InitializeComponent();
+
+            if (CommonManager.Instance.NWMode == true)
+            {
+                label_recFilePath.IsEnabled = false;
+                textBox_recFilePath.SetReadOnlyWithEffect(true);
+                button_rename.ToolTip = "EpgTimerNWでは使用不可";
+            }
+
+            try
+            {
+                base.SetParam(false, checkBox_windowPinned, checkBox_dataReplace);
+
+                //最初にコマンド集の初期化
+                mc = new CmdExeRecinfo(this);
+                mc.SetFuncGetDataList(isAll => recInfo.IntoList());
+
+                //コマンド集に無いもの,変更するもの
+                mc.AddReplaceCommand(EpgCmds.Play, (sender, e) => CommonManager.Instance.FilePlay(recInfo.RecFilePath), (sender, e) => e.CanExecute = recInfo.ID != 0);
+                mc.AddReplaceCommand(EpgCmds.Cancel, (sender, e) => this.Close());
+                mc.AddReplaceCommand(EpgCmds.BackItem, (sender, e) => MoveViewNextItem(-1));
+                mc.AddReplaceCommand(EpgCmds.NextItem, (sender, e) => MoveViewNextItem(1));
+                mc.AddReplaceCommand(EpgCmds.Search, (sender, e) => MoveViewRecinfoTarget(), (sender, e) => e.CanExecute = DataView is EpgViewBase);
+                mc.AddReplaceCommand(EpgCmds.SaveTextInDialog, (sender, e) => CommonManager.Save_ProgramText(recInfo.ProgramInfo, recInfo.RecFilePath), (sender, e) => e.CanExecute = !string.IsNullOrEmpty(recInfo.ProgramInfo));
+                mc.AddReplaceCommand(EpgCmds.DeleteInDialog, info_del, (sender, e) => e.CanExecute = recInfo.ID != 0 && recInfo.ProtectFlag == 0);
+                mc.AddReplaceCommand(EpgCmds.ChgOnOffCheck, (sender, e) => EpgCmds.ProtectChange.Execute(null, this));
+
+                //コマンド集からコマンドを登録
+                mc.ResetCommandBindings(this);
+
+                //ボタンの設定
+                mBinds.View = CtxmCode.RecInfoView;
+                mBinds.SetCommandToButton(button_play, EpgCmds.Play);
+                mBinds.SetCommandToButton(button_cancel, EpgCmds.Cancel);
+                mBinds.SetCommandToButton(button_up, EpgCmds.BackItem);
+                mBinds.SetCommandToButton(button_down, EpgCmds.NextItem);
+                mBinds.SetCommandToButton(button_chk, EpgCmds.Search);
+                mBinds.SetCommandToButton(button_save_program, EpgCmds.SaveTextInDialog);
+                mBinds.SetCommandToButton(button_del, EpgCmds.DeleteInDialog);
+                mBinds.AddInputCommand(EpgCmds.ProtectChange);//ショートカット登録
+                RefreshMenu();
+
+                button_del.ToolTipOpening += (sender, e) => button_del.ToolTip = (button_del.ToolTip as string +
+                        (IniFileHandler.GetPrivateProfileBool("SET", "RecInfoDelFile", false, SettingPath.CommonIniPath) ?
+                        "\r\n録画ファイルが存在する場合は一緒に削除されます。" : "")).Trim();
+
+                grid_protect.ToolTipOpening += (sender, e) => grid_protect.ToolTip =
+                        ("" + MenuBinds.GetInputGestureTextView(EpgCmds.ProtectChange, mBinds.View) + "\r\nプロテクト設定/解除").Trim();
+
+                button_rename_open.Click += ViewUtil.OpenFileNameDialog(textBox_recFilePath, false, "", "", true, "", false, true);
+                if (CommonManager.Instance.NWMode == false)
+                {
+                    textBox_recFilePath.TextChanged += textBox_recFilePath_TextChanged;
+                    button_rename.Click += button_rename_Click;
+                }
+
+                //ステータスバーの設定
+                this.statusBar.Status.Visibility = Visibility.Collapsed;
+                StatusManager.RegisterStatusbar(this.statusBar, this);
+
+                ChangeData(info);
+            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
 
-        public void SetRecInfo(RecFileInfo info)
+        protected override bool ReloadInfoData()
         {
-            recInfo = info;
-            EpgEventInfo eventInfo = null;
-            if (info.ProgramInfo.Length == 0 && info.EventID != 0xFFFF)
+            if (recInfo.ID == 0) return false;
+
+            RecFileInfo info;
+            CommonManager.Instance.DB.RecFileInfo.TryGetValue(recInfo.ID, out info);
+            if (info == null) recInfo.ID = 0;
+            ChangeData(info ?? recInfo);
+            return true;
+        }
+
+        public override void ChangeData(object data)
+        {
+            var info = data as RecFileInfo ?? new RecFileInfo();//nullデータを受け付ける
+            DataContext = new RecInfoItem(info);
+
+            //Appendデータが無くなる場合を考慮し、テキストはrecInfoと連動させない
+            if (recInfo != data)
             {
-                // 過去番組情報を探してみる
-                var arcList = new List<EpgServiceEventInfo>();
-                if (CommonManager.CreateSrvCtrl().SendEnumPgArc(new List<long> {
-                        0, (long)CommonManager.Create64Key(info.OriginalNetworkID, info.TransportStreamID, info.ServiceID),
-                        info.StartTime.ToFileTimeUtc(), info.StartTime.ToFileTimeUtc() + 1 }, ref arcList) == ErrCode.CMD_SUCCESS &&
-                    arcList.Count > 0 && arcList[0].eventList.Count > 0)
-                {
-                    eventInfo = arcList[0].eventList[0];
-                }
-                else
-                {
-                    // 番組情報を探してみる
-                    eventInfo = CommonManager.Instance.DB.GetPgInfo(info.OriginalNetworkID, info.TransportStreamID,
-                                                                    info.ServiceID, info.EventID, false);
-                    if (eventInfo == null || eventInfo.StartTimeFlag == 0 || eventInfo.start_time != info.StartTime)
-                    {
-                        eventInfo = null;
-                    }
-                }
+                recInfo = info;
+                recInfo.ProgramInfoSet();
+                this.Title = ViewUtil.WindowTitleText(recInfo.Title, "録画情報");
+
+                // 詳細情報を分離して表示に送る
+                string[] parts = recInfo.GetProgramInfoParts();
+                textBox_pgInfo.Document = CommonManager.ConvertDisplayText(parts[0], parts[1], parts[2]);
+                textBox_errLog.Text = recInfo.ErrInfo;
+                textBox_recFilePath.Text = recInfo.RecFilePath;
+                button_rename.IsEnabled = false;
             }
-            string basicInfo = "";
-            string extText = "";
-            string propertyInfo = "";
-            if (eventInfo != null)
+            UpdateViewSelection(0);
+        }
+
+        private void info_del(object sender, ExecutedRoutedEventArgs e)
+        {
+            EpgCmds.Delete.Execute(e.Parameter, this);
+            if (mc.IsCommandExecuted == true) MoveViewNextItem(1);
+        }
+
+        protected override void UpdateViewSelection(int mode = 0)
+        {
+            //番組表では「前へ」「次へ」の移動の時だけ追従させる。mode=2はアクティブ時の自動追尾
+            var style = JumpItemStyle.MoveTo | (mode < 2 ? JumpItemStyle.PanelNoScroll : JumpItemStyle.None);
+            if (DataView is RecInfoView)
             {
-                basicInfo = CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicInfoForProgramText) +
-                            CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.BasicTextForProgramText);
-                extText = CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.ExtendedTextForProgramText);
-                propertyInfo = CommonManager.ConvertProgramText(eventInfo, EventInfoTextMode.PropertyInfo);
+                if (mode != 0) DataView.MoveToItem(DataID, style);
+            }
+            else if (DataView is EpgMainViewBase)
+            {
+                if (mode != 2) ((EpgMainViewBase)DataView).MoveToRecInfoItem(recInfo, style);
+            }
+            else if (DataView is EpgListMainView)
+            {
+                if (mode != 0 && mode != 2) DataView.MoveToRecInfoItem(recInfo, style);
+            }
+            else if (DataView is SearchWindow.AutoAddWinListView)
+            {
+                if (mode != 0) DataView.MoveToRecInfoItem(recInfo, style);
+            }
+        }
+        private void MoveViewRecinfoTarget()
+        {
+            //一覧以外では「前へ」「次へ」の移動の時に追従させる
+            if (DataView is EpgViewBase)
+            {
+                //BeginInvokeはフォーカス対応
+                MenuUtil.CheckJumpTab(new ReserveItem(recInfo.ToReserveData()), true);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    DataView.MoveToRecInfoItem(recInfo);
+                }), DispatcherPriority.Loaded);
             }
             else
             {
-                // 詳細情報を分離してみる
-                basicInfo = info.ProgramInfo;
-                // 2個目の空行までマッチ
-                Match m = Regex.Match(basicInfo, @"^[\s\S]*?\r?\n\r?\n[\s\S]*?\r?\n\r?\n");
-                if (m.Success)
-                {
-                    propertyInfo = basicInfo.Substring(m.Length);
-                    basicInfo = basicInfo.Substring(0, m.Length);
-                    // "詳細情報"のとき空行2行までマッチ
-                    m = Regex.Match(propertyInfo, @"^詳細情報\r?\n[\s\S]*?\r?\n\r?\n\r?\n");
-                    if (m.Success)
-                    {
-                        extText = propertyInfo.Substring(0, m.Length);
-                        propertyInfo = propertyInfo.Substring(m.Length);
-                    }
-                }
+                UpdateViewSelection(3);
             }
-            richTextBox_pgInfo.Document = new FlowDocument(CommonManager.ConvertDisplayText(basicInfo, extText, propertyInfo));
-            pgInfoForProgramText = basicInfo + extText + propertyInfo;
-            button_save_program.IsEnabled = pgInfoForProgramText.Length > 0;
-            textBox_errLog.Text = info.ErrInfo;
-            textBox_recFilePath.Text = info.RecFilePath;
-            button_rename.IsEnabled = false;
         }
-
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        protected override void MoveViewNextItem(int direction, bool toRefData = false)
         {
-            if (tabControl.SelectedItem != null)
+            object NewData = null;
+            if (DataView is EpgViewBase || DataView is SearchWindow.AutoAddWinListView)
             {
-                ((TabItem)tabControl.SelectedItem).Focus();
+                NewData = DataView.MoveNextRecinfo(direction, recInfo.CurrentPgUID(), true, JumpItemStyle.MoveTo);
+                if (NewData is RecFileInfo)
+                {
+                    ChangeData(NewData);
+                    return;
+                }
+                toRefData = true;
             }
+            base.MoveViewNextItem(direction, toRefData);
         }
-
         private void textBox_recFilePath_TextChanged(object sender, TextChangedEventArgs e)
         {
-            button_rename.IsEnabled = CommonManager.Instance.NWMode == false &&
-                                      recInfo != null &&
+            button_rename.IsEnabled = recInfo != null &&
                                       recInfo.RecFilePath.Length > 0 &&
                                       textBox_recFilePath.Text.Length > 0 &&
                                       recInfo.RecFilePath != textBox_recFilePath.Text;
         }
-
         private void button_rename_Click(object sender, RoutedEventArgs e)
         {
-            if (CommonManager.Instance.NWMode == false && recInfo != null && recInfo.RecFilePath.Length > 0)
+            if (recInfo != null && recInfo.RecFilePath.Length > 0)
             {
                 string destPath = null;
                 try
@@ -145,9 +227,10 @@ namespace EpgTimer
                     try
                     {
                         err = CommonManager.CreateSrvCtrl().SendChgPathRecInfo(new List<RecFileInfo>() { recInfo });
+                        StatusManager.StatusNotifySet(err == ErrCode.CMD_SUCCESS, "録画ファイル名を変更");
                         if (err != ErrCode.CMD_SUCCESS)
                         {
-                            MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "ファイル名の変更に失敗しました。");
+                            MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "録画ファイル名の変更に失敗しました。", "録画ファイル名の変更", MessageBoxButton.OK, MessageBoxImage.Exclamation);
                         }
                     }
                     catch (Exception ex)
@@ -161,6 +244,7 @@ namespace EpgTimer
                     else
                     {
                         // ファイルが存在すれば移動する
+                        var errFileList = new List<string>();
                         try
                         {
                             File.Move(originalPath, destPath);
@@ -168,7 +252,7 @@ namespace EpgTimer
                         catch (FileNotFoundException) { }
                         catch
                         {
-                            MessageBox.Show("移動に失敗しました: " + originalPath, "", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            errFileList.Add(originalPath);
                         }
                         try
                         {
@@ -184,7 +268,7 @@ namespace EpgTimer
                                     }
                                     catch
                                     {
-                                        MessageBox.Show("移動に失敗しました: " + path, "", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                        errFileList.Add(path);
                                     }
                                 }
                             }
@@ -192,7 +276,7 @@ namespace EpgTimer
                         catch { }
 
                         // 録画情報保存フォルダのファイルも移動する
-                        string recInfoFolder = IniFileHandler.GetPrivateProfileString("SET", "RecInfoFolder", "", SettingPath.CommonIniPath);
+                        string recInfoFolder = IniFileHandler.GetPrivateProfileFolder("SET", "RecInfoFolder", SettingPath.CommonIniPath);
                         if (recInfoFolder.Length > 0)
                         {
                             foreach (string suffix in new string[] { ".err", ".program.txt" })
@@ -206,92 +290,21 @@ namespace EpgTimer
                                 catch (FileNotFoundException) { }
                                 catch
                                 {
-                                    MessageBox.Show("移動に失敗しました: " + path, "", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                    errFileList.Add(path);
                                 }
                             }
+                        }
+
+                        if (errFileList.Any())
+                        {
+                            StatusManager.StatusNotifyAppend("リネームに失敗 < ");
+                            MessageBox.Show("録画済み一覧の情報は更新されましたが、リネームまたは移動に失敗したファイルがあります。\r\n\r\n" + string.Join("\r\n", errFileList), "録画ファイル名の変更", MessageBoxButton.OK, MessageBoxImage.Warning);
                         }
                     }
                 }
             }
             button_rename.IsEnabled = false;
         }
-
-        private void button_play_Click(object sender, RoutedEventArgs e)
-        {
-            if (recInfo != null)
-            {
-                if (recInfo.RecFilePath.Length > 0)
-                {
-                    CommonManager.Instance.FilePlay(recInfo.RecFilePath);
-                }
-            }
-        }
-
-        private void button_del_Click(object sender, RoutedEventArgs e)
-        {
-            if (recInfo != null)
-            {
-                if (Settings.Instance.ConfirmDelRecInfo)
-                {
-                    if ((recInfo.RecFilePath.Length > 0 || Settings.Instance.ConfirmDelRecInfoAlways) &&
-                        MessageBox.Show("削除してよろしいですか?" +
-                                        (recInfo.RecFilePath.Length > 0 ? "\r\n\r\n「録画ファイルも削除する」設定が有効な場合、ファイルも削除されます。" : ""), "確認",
-                                        MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.OK) != MessageBoxResult.OK)
-                    {
-                        return;
-                    }
-                }
-                try
-                {
-                    CommonManager.CreateSrvCtrl().SendDelRecInfo(new List<uint>() { recInfo.ID });
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.ToString());
-                }
-            }
-            Close();
-        }
-
-        private void button_save_program_Click(object sender, RoutedEventArgs e)
-        {
-            var dlg = new Microsoft.Win32.SaveFileDialog();
-            dlg.DefaultExt = ".txt";
-            dlg.FileName = "a.program.txt";
-            dlg.Filter = "txt Files|*.txt|all Files|*.*";
-            if (dlg.ShowDialog() == true)
-            {
-                try
-                {
-                    using (var file = new StreamWriter(dlg.FileName, false, Encoding.UTF8))
-                    {
-                        file.Write(pgInfoForProgramText);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.ToString());
-                }
-            }
-        }
-
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.None)
-            {
-                switch (e.Key)
-                {
-                    case Key.Escape:
-                        Close();
-                        e.Handled = true;
-                        break;
-                }
-            }
-        }
-
-        private void button_cancel_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
     }
+    public class RecInfoDescWindowBase : ReserveWindowBase<RecInfoDescWindow> { }
 }

@@ -1,715 +1,586 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
-using System.ComponentModel;
-using System.Collections.ObjectModel;
 
 namespace EpgTimer
 {
     /// <summary>
     /// SearchWindow.xaml の相互作用ロジック
     /// </summary>
-    public partial class SearchWindow : Window
+    public partial class SearchWindow : SearchWindowBase
     {
-        private List<KeyValuePair<string, bool>> listSortHistory =
-            new List<KeyValuePair<string, bool>>() { new KeyValuePair<string, bool>("StartTime", false) };
+        public static event ViewUpdatedHandler ViewReserveUpdated = null;
+        
+        protected override DataItemViewBase DataView { get { return mainWindow.autoAddView.epgAutoAddView; } }
+        protected override string AutoAddString { get { return "キーワード予約"; } }
 
-        private uint autoAddID = 0;
-        private bool searchOnLoaded = false;
+        private ListViewController<SearchItem> lstCtrl;
+        private CmdExeReserve mc; //予約系コマンド集
 
-        public SearchWindow()
+        private EpgViewPeriodDef prdef;
+        private bool ArcSearch = false;
+        private bool Searched = false;
+
+        static SearchWindow()
+        {
+            //追加時の選択用
+            mainWindow.autoAddView.epgAutoAddView.ViewUpdated += SearchWindow.UpdatesViewSelection;
+        }
+        public SearchWindow(EpgAutoAddData data = null, AutoAddMode mode = AutoAddMode.Find, string searchWord = null)
+            : base(data, mode)
         {
             InitializeComponent();
 
             try
             {
-                //ウインドウ位置の復元
-                if (Settings.Instance.SearchWndWidth != 0)
+                buttonID = "検索";
+                base.SetParam(true, checkBox_windowPinned, checkBox_dataReplace);
+
+                //スプリッタ位置設定。操作不可能な値をセットしないよう努める。
+                if (Settings.Instance.SearchWndTabsHeight > grid_Tabs.Height.Value)
                 {
-                    this.Width = Settings.Instance.SearchWndWidth;
-                }
-                if (Settings.Instance.SearchWndHeight != 0)
-                {
-                    this.Height = Settings.Instance.SearchWndHeight;
-                }
-                if (Settings.Instance.SearchWndTabsHeight > 405)
-                {
-                    //操作不可能な値をセットしないよう努める
                     grid_Tabs.Height = new GridLength(Math.Min(Settings.Instance.SearchWndTabsHeight, Height));
                 }
-                searchKeyView.SetSearchKey(Settings.Instance.CreateDefSearchSetting());
+                if (Settings.Instance.SearchWndJunreHeight >= 0)
+                {
+                    searchKeyView.grid_Junre.Height = new GridLength(Settings.Instance.SearchWndJunreHeight);
+                }
+
+                //リストビュー関連の設定
+                var list_columns = Resources["ReserveItemViewColumns"] as GridViewColumnList;
+                list_columns.AddRange(Resources["RecSettingViewColumns"] as GridViewColumnList);
+
+                lstCtrl = new ListViewController<SearchItem>(this);
+                lstCtrl.SetSavePath(CommonUtil.NameOf(() => Settings.Instance.SearchWndColumn)
+                    , CommonUtil.NameOf(() => Settings.Instance.SearchColumnHead)
+                    , CommonUtil.NameOf(() => Settings.Instance.SearchSortDirection));
+                lstCtrl.SetViewSetting(listView_result, gridView_result, true, true, list_columns);
+                lstCtrl.SetSelectedItemDoubleClick(EpgCmds.ShowDialog);
+
+                //ステータス変更の設定
+                lstCtrl.SetSelectionChangedEventHandler((sender, e) => this.UpdateStatus(1));
+
+                //最初にコマンド集の初期化
+                mc = new CmdExeReserve(this);
+                mc.SetFuncGetSearchList(isAll => (isAll == true ? lstCtrl.dataList.ToList() : lstCtrl.GetSelectedItemsList()));
+                mc.SetFuncSelectSingleSearchData((noChange) => lstCtrl.SelectSingleItem(noChange));
+                mc.SetFuncReleaseSelectedData(() => listView_result.UnselectAll());
+                mc.SetFuncGetRecSetting(() => recSettingView.GetRecSetting());
+                mc.SetFuncGetSearchKey(() => searchKeyView.GetSearchKey());
+
+                //コマンド集に無いもの
+                mc.AddReplaceCommand(EpgCmds.ReSearch, mc_Research);
+                mc.AddReplaceCommand(EpgCmds.ReSearch2, mc_Research);
+                mc.AddReplaceCommand(EpgCmds.Search, button_search_Click);
+                mc.AddReplaceCommand(EpgCmds.AddInDialog, autoadd_add);
+                mc.AddReplaceCommand(EpgCmds.ChangeInDialog, autoadd_chg, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change);
+                mc.AddReplaceCommand(EpgCmds.DeleteInDialog, autoadd_del1, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change);
+                mc.AddReplaceCommand(EpgCmds.Delete2InDialog, autoadd_del2, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change);
+                mc.AddReplaceCommand(EpgCmds.BackItem, (sender, e) => MoveViewNextItem(-1));
+                mc.AddReplaceCommand(EpgCmds.NextItem, (sender, e) => MoveViewNextItem(1));
+                mc.AddReplaceCommand(EpgCmds.Cancel, (sender, e) => this.Close());
+                mc.AddReplaceCommand(EpgCmds.ChgOnOffCheck, (sender, e) => lstCtrl.ChgOnOffFromCheckbox(e.Parameter, EpgCmds.ChgOnOff));
+
+                //コマンド集を振り替えるもの
+                mc.AddReplaceCommand(EpgCmds.JumpReserve, (sender, e) => mc_JumpTab(CtxmCode.ReserveView));
+                mc.AddReplaceCommand(EpgCmds.JumpRecInfo, (sender, e) => mc_JumpTab(lstCtrl.SelectSingleItem(true).IsReserved ? CtxmCode.ReserveView : CtxmCode.RecInfoView));
+                mc.AddReplaceCommand(EpgCmds.JumpTuner, (sender, e) => mc_JumpTab(CtxmCode.TunerReserveView));
+                mc.AddReplaceCommand(EpgCmds.JumpTable, (sender, e) => mc_JumpTab(CtxmCode.EpgView));
+
+                //コマンド集からコマンドを登録。
+                mc.ResetCommandBindings(this, listView_result.ContextMenu);
+
+                //コンテキストメニューを開く時の設定
+                listView_result.ContextMenu.Opened += new RoutedEventHandler(mc.SupportContextMenuLoading);
+
+                //ボタンの設定
+                mBinds.View = CtxmCode.SearchWindow;
+                mBinds.SetCommandToButton(button_search, EpgCmds.Search);
+                mBinds.SetCommandToButton(button_add_reserve, EpgCmds.AddReserve);
+                mBinds.SetCommandToButton(button_delall_reserve, EpgCmds.DeleteAll);
+                mBinds.SetCommandToButton(button_add_epgAutoAdd, EpgCmds.AddInDialog);
+                mBinds.SetCommandToButton(button_chg_epgAutoAdd, EpgCmds.ChangeInDialog);
+                mBinds.SetCommandToButton(button_del_epgAutoAdd, EpgCmds.DeleteInDialog);
+                mBinds.SetCommandToButton(button_del2_epgAutoAdd, EpgCmds.Delete2InDialog);
+                mBinds.SetCommandToButton(button_up_epgAutoAdd, EpgCmds.BackItem);
+                mBinds.SetCommandToButton(button_down_epgAutoAdd, EpgCmds.NextItem);
+                mBinds.SetCommandToButton(button_cancel, EpgCmds.Cancel);
+
+                //メニューの作成、ショートカットの登録
+                RefreshMenu();
+
+                //予約ウィンドウからのリスト検索、ジャンプ関連の対応
+                DataListView = new AutoAddWinListView(listView_result);
+                this.grid_main.Children.Add(DataListView);
+
+                //その他のショートカット(検索ダイアログ固有の設定)。
+                searchKeyView.InputBindings.Add(new InputBinding(EpgCmds.Search, new KeyGesture(Key.Enter)));
+                listView_result.PreviewKeyDown += (sender, e) => ViewUtil.OnKeyMoveNextReserve(sender, e, DataListView);
+
+                //録画設定タブ関係の設定
+                recSettingView.SelectedPresetChanged += SetRecSettingTabHeader;
+                recSettingTabHeader.MouseRightButtonUp += recSettingView.OpenPresetSelectMenuOnMouseEvent;
+
+                //過去番組検索
+                SetSearchPeriod();
+
+                //ステータスバーの登録
+                StatusManager.RegisterStatusbar(this.statusBar, this);
+
+                //初期検索ワードの設定。条件節は無くても後でdataが読み込まれるので同じだけど、念のため。
+                if (data == null) searchKeyView.comboBox_andKey.Text = searchWord;
             }
-            catch
-            {
-            }
-            listView_result.AlternationCount = Settings.Instance.ResAlternationCount;
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+        }
+        public override void RefreshMenu()
+        {
+            mc.EpgInfoOpenMode = Settings.Instance.SearchEpgInfoOpenMode;
+            mBinds.ResetInputBindings(this, listView_result);
+            mm.CtxmGenerateContextMenu(listView_result.ContextMenu, CtxmCode.SearchWindow, true);
         }
 
-        public void SetSearchDefKey(EpgSearchKeyInfo key)
+        public EpgSearchKeyInfo GetSearchKey()
+        {
+            return searchKeyView.GetSearchKey();
+        }
+        public void SetSearchKey(EpgSearchKeyInfo key)
         {
             searchKeyView.SetSearchKey(key);
-            searchOnLoaded = true;
         }
-
-        /// <summary>
-        /// 自動登録情報をセットし、ウィンドウを変更モードにする
-        /// </summary>
-        public void SetChangeModeData(EpgAutoAddData item)
+        public RecSettingData GetRecSetting()
         {
-            autoAddID = item.dataID;
-            SetSearchDefKey(item.searchInfo);
-            recSettingView.SetDefSetting(item.recSetting);
-            Title = "EPG予約条件";
-            button_chg_epgAutoAdd.Visibility = Visibility.Visible;
+            return recSettingView.GetRecSetting();
         }
-
-        private void tabItem_searchKey_KeyDown(object sender, KeyEventArgs e)
+        public void SetRecSetting(RecSettingData set)
         {
-            if (e.Key == Key.Enter && e.IsRepeat == false)
-            {
-                SearchPg();
-            }
+            recSettingView.SetDefSetting(set);
         }
-
-        private void button_search_Click(object sender, RoutedEventArgs e)
+        public override AutoAddData GetData()
         {
+            var data = new EpgAutoAddData();
+            data.dataID = (uint)dataID;
+            data.searchInfo = GetSearchKey();
+            data.recSetting = GetRecSetting();
+            return data;
+        }
+        protected override bool SetData(EpgAutoAddData data)
+        {
+            if (data == null) return false;
+
+            dataID = data.dataID;
+            SetSearchKey(data.searchInfo);
+            SetRecSetting(data.recSetting);
+            return true;
+        }
+        public override void ChangeData(object data)
+        {
+            base.ChangeData(data);
             SearchPg();
         }
-
-        private void SearchPg()
+        public void SetRecSettingTabHeader(bool SimpleChanged = true)
         {
-            try
-            {
-                var resultList = new List<SearchItem>();
-
-                EpgSearchKeyInfo key = searchKeyView.GetSearchKey();
-                key.andKey = key.andKey.Substring(key.andKey.StartsWith("^!{999}", StringComparison.Ordinal) ? 7 : 0);
-                List<EpgEventInfo> list;
-                if (Settings.Instance.NgAutoEpgLoadNW)
-                {
-                    //EPGデータの遅延更新のため内部キャッシュは利用しない
-                    list = new List<EpgEventInfo>();
-                    CommonManager.CreateSrvCtrl().SendSearchPg(new List<EpgSearchKeyInfo>() { key }, ref list);
-                }
-                else
-                {
-                    CommonManager.Instance.DB.SearchPg(new List<EpgSearchKeyInfo>() { key }, out list);
-                }
-                DateTime now = DateTime.UtcNow.AddHours(9);
-                foreach (EpgEventInfo info in list ?? Enumerable.Empty<EpgEventInfo>())
-                {
-                    var item = new SearchItem(info, false, false, false);
-                    if (item.EventInfo.start_time.AddSeconds(item.EventInfo.DurationFlag == 0 ? 0 : item.EventInfo.durationSec) > now)
-                    {
-                        ulong serviceKey = CommonManager.Create64Key(info.original_network_id, info.transport_stream_id, info.service_id);
-                        if (ChSet5.Instance.ChList.ContainsKey(serviceKey) == true)
-                        {
-                            item.ServiceName = ChSet5.Instance.ChList[serviceKey].ServiceName;
-                        }
-                        resultList.Add(item);
-                    }
-                }
-
-                listView_result.ItemsSource = resultList;
-                RefreshReserve();
-                Sort();
-
-                if (Settings.Instance.SaveSearchKeyword)
-                {
-                    searchKeyView.SaveSearchLog();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+            recSettingTabHeader.Text = "録画設定" + recSettingView.GetRecSettingHeaderString(SimpleChanged);
         }
 
-        private void RefreshReserve()
+        private void button_search_Click(object sender, ExecutedRoutedEventArgs e)
         {
-            var resultList = listView_result.ItemsSource as List<SearchItem>;
-            if (resultList != null)
+            SearchPg(true);
+            if (Settings.Instance.UseLastSearchKey == true)
             {
-                List<decimal> list = CommonManager.Instance.DB.ReserveList.Values.Select(a => CommonManager.Create64PgKey(
-                    a.OriginalNetworkID, a.TransportStreamID, a.ServiceID, a.EventID) * ((decimal)uint.MaxValue + 1) + a.ReserveID).ToList();
-                list.Sort();
-                for (int i = 0; i < resultList.Count; i++)
-                {
-                    SearchItem item = resultList[i];
-                    if (item.Duplicate)
-                    {
-                        resultList.RemoveAt(i--);
-                    }
-                    else
-                    {
-                        item.ReserveInfo = null;
-                        decimal key = CommonManager.Create64PgKey(item.EventInfo.original_network_id, item.EventInfo.transport_stream_id,
-                                                                  item.EventInfo.service_id, item.EventInfo.event_id) * ((decimal)uint.MaxValue + 1);
-                        int index = list.BinarySearch(key);
-                        index = index < 0 ? ~index : index;
-                        for (; index < list.Count && list[index] <= key + uint.MaxValue; index++)
-                        {
-                            //予約情報が見つかった
-                            if (item.ReserveInfo != null)
-                            {
-                                //さらに見つかった
-                                item = new SearchItem(item.EventInfo, false, item.Filtered, true) { ServiceName = item.ServiceName };
-                                resultList.Insert(++i, item);
-                            }
-                            item.ReserveInfo = CommonManager.Instance.DB.ReserveList[(uint)(list[index] % ((decimal)uint.MaxValue + 1))];
-                        }
-                    }
-                }
-                CollectionViewSource.GetDefaultView(listView_result.ItemsSource).Refresh();
+                Settings.Instance.DefSearchKey = GetSearchKey();
+                SettingWindow.UpdatesInfo("検索/キーワード予約ダイアログの前回検索条件変更");
             }
+            StatusManager.StatusNotifySet(true, "検索を実行");
+        }
+        private void SearchPg(bool addSearchLog = false)
+        {
+            if (addSearchLog == true) searchKeyView.AddSearchLog();
+
+            lstCtrl.ReloadInfoData(dataList =>
+            {
+                EpgSearchKeyInfo key = GetSearchKey();
+                key.keyDisabledFlag = 0; //無効解除
+
+                ArcSearch = searchKeyView.checkBox_noArcSearch.IsChecked == false && Settings.Instance.EpgSettingList[0].EpgArcDefaultDays > 0;
+                EpgViewPeriod period = IsJumpPanelOpened ? SearchPeriod : ArcSearch ? prdef.DefPeriod : null;
+
+                if (period != null) period.StrictLoad = true;
+                var list = CommonManager.Instance.DB.SearchPg(key.IntoList(), period);
+                dataList.AddRange(list.ToSearchList(period == null));
+
+                //起動直後用。実際には過去検索して無くても必要な場合があるが、あまり重要ではないので無視する。
+                if (ArcSearch) CommonManager.Instance.DB.ReloadRecFileInfo();
+
+                return true;
+            });
+
+            UpdateStatus();
+            SetRecSettingTabHeader(false);
+            SetWindowTitle();
+            RefreshMoveButtonStatus();
+            Searched = true;
+        }
+        public override void SetWindowTitle()
+        {
+            this.Title = ViewUtil.WindowTitleText(searchKeyView.comboBox_andKey.Text, (winMode == AutoAddMode.Find ? "検索" : "キーワード自動予約登録"));
+        }
+        private void UpdateStatus(int mode = 0)
+        {
+            string s1 = null;
+            string s2 = "";
+            if (mode == 0) s1 = ViewUtil.ConvertSearchItemStatus(lstCtrl.dataList, "検索数");
+            if (Settings.Instance.DisplayStatus == true)
+            {
+                List<SearchItem> sList = lstCtrl.GetSelectedItemsList();
+                s2 = sList.Count == 0 ? "" : ViewUtil.ConvertSearchItemStatus(sList, "　選択中");
+            }
+            this.statusBar.SetText(s1, s2);
+        }
+        private void RefreshReserveInfo()
+        {
+            lstCtrl.dataList.SetReserveData();
+            lstCtrl.RefreshListView(true);
+            if (ViewReserveUpdated != null) ViewReserveUpdated(this.DataListView, true);
+            UpdateStatus();
         }
 
-        private void buttonOrMenuItem_add_reserve_Click(object sender, RoutedEventArgs e)
+        //proc 0:追加、1:変更、2:削除、3:予約ごと削除
+        protected override int CheckAutoAddChange(ExecutedRoutedEventArgs e, int proc)
+        {
+            int ret = base.CheckAutoAddChange(e, proc);
+
+            //データの更新。最初のキャンセルを過ぎていたら画面を更新する。
+            if (ret >= 0) SearchPg();
+
+            if (ret != 0) return ret;
+
+            if (proc < 2 && Settings.Instance.CautionManyChange == true && searchKeyView.checkBox_keyDisabled.IsChecked != true)
+            {
+                if (MenuUtil.CautionManyMessage(lstCtrl.dataList.GetNoReserveList().Count, "予約追加の確認") == false)
+                { return 2; }
+            }
+
+            return 0;
+        }
+
+        private void mc_JumpTab(CtxmCode trg_code)
+        {
+            JumpTabAndHide(trg_code, mc.GetJumpTabItem(trg_code));
+        }
+        private void mc_Research(object sender, ExecutedRoutedEventArgs e)
         {
             try
             {
                 if (listView_result.SelectedItem != null)
                 {
-                    List<ReserveData> list = new List<ReserveData>();
-                    RecSettingData setInfo = sender is MenuItem ? Settings.CreateRecSetting((uint)((MenuItem)sender).Tag) :
-                                                                  recSettingView.GetRecSetting();
-
-                    foreach (SearchItem item in listView_result.SelectedItems)
+                    SearchItem item = lstCtrl.SelectSingleItem();
+                    EpgSearchKeyInfo defKey = MenuUtil.SendAutoAddKey(item.EventInfo, CmdExeUtil.IsKeyGesture(e), GetSearchKey());
+                    
+                    if (e.Command == EpgCmds.ReSearch)
                     {
-                        EpgEventInfo eventInfo = item.EventInfo;
-                        if (item.IsReserved == false && eventInfo.StartTimeFlag != 0)
-                        {
-                            ReserveData reserveInfo = new ReserveData();
-                            if (eventInfo.ShortInfo != null)
-                            {
-                                reserveInfo.Title = eventInfo.ShortInfo.event_name;
-                            }
-
-                            reserveInfo.StartTime = eventInfo.start_time;
-                            reserveInfo.StartTimeEpg = eventInfo.start_time;
-
-                            if (eventInfo.DurationFlag == 0)
-                            {
-                                reserveInfo.DurationSecond = 10 * 60;
-                            }
-                            else
-                            {
-                                reserveInfo.DurationSecond = eventInfo.durationSec;
-                            }
-
-                            ulong key = CommonManager.Create64Key(eventInfo.original_network_id, eventInfo.transport_stream_id, eventInfo.service_id);
-                            if (ChSet5.Instance.ChList.ContainsKey(key) == true)
-                            {
-                                reserveInfo.StationName = ChSet5.Instance.ChList[key].ServiceName;
-                            }
-                            reserveInfo.OriginalNetworkID = eventInfo.original_network_id;
-                            reserveInfo.TransportStreamID = eventInfo.transport_stream_id;
-                            reserveInfo.ServiceID = eventInfo.service_id;
-                            reserveInfo.EventID = eventInfo.event_id;
-
-                            reserveInfo.RecSetting = setInfo;
-
-                            list.Add(reserveInfo);
-                        }
-                    }
-
-                    if (list.Count > 0)
-                    {
-                        ErrCode err = CommonManager.CreateSrvCtrl().SendAddReserve(list);
-                        if (err != ErrCode.CMD_SUCCESS)
-                        {
-                            MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "予約登録でエラーが発生しました。終了時間がすでに過ぎている可能性があります。");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_add_epgAutoAdd_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                EpgAutoAddData addItem = new EpgAutoAddData();
-                addItem.searchInfo = searchKeyView.GetSearchKey();
-                addItem.recSetting = recSettingView.GetRecSetting();
-
-                List<EpgAutoAddData> addList = new List<EpgAutoAddData>();
-                addList.Add(addItem);
-
-                if (CommonManager.CreateSrvCtrl().SendAddEpgAutoAdd(addList) != ErrCode.CMD_SUCCESS)
-                {
-                    MessageBox.Show("追加に失敗しました");
-                }
-                Close();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void button_chg_epgAutoAdd_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                EpgAutoAddData addItem = new EpgAutoAddData();
-                addItem.dataID = autoAddID;
-                addItem.searchInfo = searchKeyView.GetSearchKey();
-                addItem.recSetting = recSettingView.GetRecSetting();
-
-                List<EpgAutoAddData> addList = new List<EpgAutoAddData>();
-                addList.Add(addItem);
-
-                if (CommonManager.CreateSrvCtrl().SendChgEpgAutoAdd(addList) != ErrCode.CMD_SUCCESS)
-                {
-                    MessageBox.Show("変更に失敗しました");
-                }
-                Close();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void listView_result_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            MenuItem_Click_ShowDialog(sender, e);
-        }
-
-        private void ChangeReserve(ReserveData reserveInfo)
-        {
-            ((MainWindow)Application.Current.MainWindow).SwapOwnedReserveWindow(null);
-            var dlg = new ChgReserveWindow();
-            dlg.Owner = (Window)PresentationSource.FromVisual(this).RootVisual;
-            dlg.SetReserveInfo(reserveInfo);
-            dlg.ShowDialog();
-        }
-
-        private void AddReserve(EpgEventInfo eventInfo)
-        {
-            ((MainWindow)Application.Current.MainWindow).SwapOwnedReserveWindow(null);
-            var dlg = new AddReserveEpgWindow();
-            dlg.Owner = (Window)PresentationSource.FromVisual(this).RootVisual;
-            dlg.SetEventInfo(eventInfo);
-            dlg.ShowDialog();
-        }
-
-        private void GridViewColumnHeader_Click(object sender, RoutedEventArgs e)
-        {
-            GridViewColumnHeader headerClicked = e.OriginalSource as GridViewColumnHeader;
-
-            if (headerClicked != null)
-            {
-                if (headerClicked.Role != GridViewColumnHeaderRole.Padding)
-                {
-                    int index = listSortHistory.FindIndex(item => item.Key == (string)headerClicked.Tag);
-                    if (index == 0)
-                    {
-                        listSortHistory[0] = new KeyValuePair<string, bool>(listSortHistory[0].Key, !listSortHistory[0].Value);
+                        SetSearchKey(defKey);
+                        SearchPg();
                     }
                     else
                     {
-                        if (index > 0)
+                        WriteWindowSaveData();
+
+                        var dlg = new SearchWindow(mode: winMode == AutoAddMode.Change ? AutoAddMode.NewAdd : winMode);
+                        if (Settings.Instance.MenuSet.CancelAutoAddOff == true)
                         {
-                            listSortHistory.RemoveAt(index);
+                            defKey.keyDisabledFlag = 0;
                         }
-                        listSortHistory.Insert(0, new KeyValuePair<string, bool>((string)headerClicked.Tag, false));
+                        if (Settings.Instance.MenuSet.SetJunreToAutoAdd == false)
+                        {
+                            defKey.notContetFlag = 0;
+                            defKey.contentList.Clear();
+                        }
+                        dlg.SetSearchKey(defKey);
+                        dlg.SetRecSetting(this.GetRecSetting());
+                        dlg.Show();
                     }
-                    Sort();
                 }
             }
-        }
-
-        private void Sort()
-        {
-            if (listView_result.ItemsSource == null)
-            {
-                return;
-            }
-            ICollectionView dataView = CollectionViewSource.GetDefaultView(listView_result.ItemsSource);
-
-            using (dataView.DeferRefresh())
-            {
-                dataView.SortDescriptions.Clear();
-                foreach (KeyValuePair<string, bool> item in listSortHistory)
-                {
-                    dataView.SortDescriptions.Add(
-                        new SortDescription(item.Key, item.Value ? ListSortDirection.Descending : ListSortDirection.Ascending));
-                }
-            }
-        }
-
-        private void Window_Closing(object sender, CancelEventArgs e)
-        {
-            Settings.Instance.SearchWndWidth = Width;
-            Settings.Instance.SearchWndHeight = Height;
-            Settings.Instance.SearchWndTabsHeight = grid_Tabs.Height.Value;
-            CommonManager.Instance.DB.ReserveInfoChanged -= RefreshReserve;
-        }
-
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                switch (e.Key)
-                {
-                    case Key.F:
-                        if (e.IsRepeat == false)
-                        {
-                            SearchPg();
-                        }
-                        e.Handled = true;
-                        break;
-                    case Key.N:
-                        // バインディング更新のためフォーカスを移す
-                        button_add_epgAutoAdd.Focus();
-                        button_add_epgAutoAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                        e.Handled = true;
-                        break;
-                    case Key.S:
-                        if (button_chg_epgAutoAdd.Visibility == Visibility.Visible)
-                        {
-                            button_chg_epgAutoAdd.Focus();
-                            button_chg_epgAutoAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                        }
-                        e.Handled = true;
-                        break;
-                }
-            }
-            else if (Keyboard.Modifiers == ModifierKeys.None)
-            {
-                switch (e.Key)
-                {
-                    case Key.Escape:
-                        Close();
-                        e.Handled = true;
-                        break;
-                }
-            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            if (searchOnLoaded)
+            if ((winMode == AutoAddMode.Find || winMode == AutoAddMode.NewAdd) && string.IsNullOrEmpty(searchKeyView.comboBox_andKey.Text))
             {
-                searchOnLoaded = false;
-                SearchPg();
+                this.searchKeyView.comboBox_andKey.Focus();
+                SetRecSettingTabHeader(true);
             }
             else
             {
-                searchKeyView.FocusAndKey();
-            }
-            CommonManager.Instance.DB.ReserveInfoChanged -= RefreshReserve;
-            CommonManager.Instance.DB.ReserveInfoChanged += RefreshReserve;
-        }
-
-        void listView_result_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                switch (e.Key)
-                {
-                    case Key.R:
-                        if (e.IsRepeat == false)
-                        {
-                            //予約が1つでもあれば有効無効切り替えとみなす
-                            if (listView_result.SelectedItems.Cast<SearchItem>().Any(a => a.IsReserved))
-                            {
-                                MenuItem_Click_No(sender, e);
-                            }
-                            else
-                            {
-                                buttonOrMenuItem_add_reserve_Click(sender, e);
-                            }
-                        }
-                        e.Handled = true;
-                        break;
-                }
-            }
-            else if (Keyboard.Modifiers == ModifierKeys.None)
-            {
-                switch (e.Key)
-                {
-                    case Key.F3:
-                        MenuItem_Click_ProgramTable(sender, e);
-                        e.Handled = true;
-                        break;
-                    case Key.Enter:
-                        MenuItem_Click_ShowDialog(sender, e);
-                        e.Handled = true;
-                        break;
-                }
+                this.SearchPg();
             }
         }
 
-        private void MenuItem_Click_DeleteItem(object sender, RoutedEventArgs e)
+        protected override void WriteWindowSaveData()
         {
-            if (listView_result.SelectedItem != null)
-            {
-                List<uint> list = new List<uint>();
-
-                foreach (SearchItem item in listView_result.SelectedItems)
-                {
-                    if (item.IsReserved == true)
-                    {
-                        list.Add(item.ReserveInfo.ReserveID);
-                    }
-                }
-
-                if (list.Count > 0)
-                {
-                    ErrCode err = CommonManager.CreateSrvCtrl().SendDelReserve(list);
-                    if (err != ErrCode.CMD_SUCCESS)
-                    {
-                        MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "予約削除でエラーが発生しました。");
-                    }
-                }
-            }
+            lstCtrl.SaveViewDataToSettings();
+            base.WriteWindowSaveData();
+            Settings.Instance.SearchWndTabsHeight = grid_Tabs.Height.Value;
+            Settings.Instance.SearchWndJunreHeight = Math.Min(searchKeyView.grid_Junre.ActualHeight, searchKeyView.grid_Filter.ActualHeight - 6);
+            Settings.Instance.ArcSearch = searchKeyView.checkBox_noArcSearch.IsChecked == false;
         }
 
-        private void MenuItem_Click_ShowDialog(object sender, RoutedEventArgs e)
+        private bool RefreshReserveInfoFlg = false;
+        public override void UpdateInfo(bool reload = true)
         {
-            if (listView_result.SelectedItem != null)
-            {
-                SearchItem item = listView_result.SelectedItem as SearchItem;
-                if (item.IsReserved == true)
-                {
-                    ChangeReserve(item.ReserveInfo);
-                }
-                else
-                {
-                    AddReserve(item.EventInfo);
-                }
-            }
+            RefreshReserveInfoFlg = true;
+            base.UpdateInfo(reload);
         }
-
-        private void MenuItem_Click_No(object sender, RoutedEventArgs e)
+        protected override void ReloadInfo()
         {
-            var list = new List<ReserveData>();
-            var originalRecModeList = new List<byte>();
-            foreach (SearchItem item in listView_result.SelectedItems)
+            //再検索はCtrlCmdを使うので、アクティブウィンドウでだけ実行させる。
+            if (ReloadInfoFlg == true && this.IsActive == true)
             {
-                if (item.IsReserved)
-                {
-                    originalRecModeList.Add(item.ReserveInfo.RecSetting.RecMode);
-                    byte recMode = item.ReserveInfo.RecSetting.GetRecMode();
-                    item.ReserveInfo.RecSetting.RecMode = CommonManager.Instance.DB.CombineRecModeAndNoRec(recMode, !item.ReserveInfo.RecSetting.IsNoRec());
-                    list.Add(item.ReserveInfo);
-                }
-            }
-            if (list.Count > 0)
-            {
-                string message = null;
-                try
-                {
-                    ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(list);
-                    if (err != ErrCode.CMD_SUCCESS)
-                    {
-                        message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    message = ex.ToString();
-                }
-                for (int i = 0; i < list.Count; i++)
-                {
-                    list[i].RecSetting.RecMode = originalRecModeList[i];
-                }
-                if (message != null)
-                {
-                    MessageBox.Show(message);
-                }
-            }
-        }
-
-        private void MenuItem_Click_RecMode(object sender, RoutedEventArgs e)
-        {
-            var list = new List<ReserveData>();
-            var originalRecModeList = new List<byte>();
-            foreach (SearchItem item in listView_result.SelectedItems)
-            {
-                if (item.IsReserved)
-                {
-                    originalRecModeList.Add(item.ReserveInfo.RecSetting.RecMode);
-                    byte recMode = byte.Parse((string)((MenuItem)sender).Tag);
-                    item.ReserveInfo.RecSetting.RecMode = CommonManager.Instance.DB.CombineRecModeAndNoRec(recMode, item.ReserveInfo.RecSetting.IsNoRec());
-                    list.Add(item.ReserveInfo);
-                }
-            }
-            if (list.Count > 0)
-            {
-                string message = null;
-                try
-                {
-                    ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(list);
-                    if (err != ErrCode.CMD_SUCCESS)
-                    {
-                        message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    message = ex.ToString();
-                }
-                for (int i = 0; i < list.Count; i++)
-                {
-                    list[i].RecSetting.RecMode = originalRecModeList[i];
-                }
-                if (message != null)
-                {
-                    MessageBox.Show(message);
-                }
-            }
-        }
-
-        private void MenuItem_Click_Priority(object sender, RoutedEventArgs e)
-        {
-            var list = new List<ReserveData>();
-            var originalPriorityList = new List<byte>();
-            foreach (SearchItem item in listView_result.SelectedItems)
-            {
-                if (item.IsReserved)
-                {
-                    originalPriorityList.Add(item.ReserveInfo.RecSetting.Priority);
-                    item.ReserveInfo.RecSetting.Priority = byte.Parse((string)((MenuItem)sender).Tag);
-                    list.Add(item.ReserveInfo);
-                }
-            }
-            if (list.Count > 0)
-            {
-                string message = null;
-                try
-                {
-                    ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(list);
-                    if (err != ErrCode.CMD_SUCCESS)
-                    {
-                        message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    message = ex.ToString();
-                }
-                for (int i = 0; i < list.Count; i++)
-                {
-                    list[i].RecSetting.Priority = originalPriorityList[i];
-                }
-                if (message != null)
-                {
-                    MessageBox.Show(message);
-                }
-            }
-        }
-
-        private void MenuItem_Click_ProgramTable(object sender, RoutedEventArgs e)
-        {
-            SearchItem item1 = this.listView_result.SelectedItem as SearchItem;
-            if (item1 != null)
-            {
-                ((MainWindow)Application.Current.MainWindow).SearchJumpTargetProgram(item1.EventInfo);
-            }
-        }
-
-        private void MenuItem_Click_Research(object sender, RoutedEventArgs e)
-        {
-            if (listView_result.SelectedItem != null)
-            {
-                SearchItem item = listView_result.SelectedItem as SearchItem;
-                searchKeyView.SetAndKey(item.EventName);
-                searchKeyView.SetServiceList(new List<long> { (long)CommonManager.Create64Key(item.EventInfo.original_network_id,
-                                                                                              item.EventInfo.transport_stream_id,
-                                                                                              item.EventInfo.service_id) });
+                RefreshPeriod();
                 SearchPg();
+                ReloadInfoFlg = false;
+                RefreshReserveInfoFlg = false;
+            }
+            //表示の更新は見えてれば実行する。
+            if (RefreshReserveInfoFlg == true && this.IsVisible == true && (this.WindowState != WindowState.Minimized || this.IsActive == true))
+            {
+                RefreshPeriod();
+                recSettingView.RefreshView();
+                RefreshMoveButtonStatus();
+                RefreshReserveInfo();
+                RefreshReserveInfoFlg = false;
+            }
+        }
+        public static void UpdatesRecinfo()
+        {
+            foreach (var win in Application.Current.Windows.OfType<SearchWindow>())
+            {
+                if (win.ArcSearch == true) win.UpdateInfo(false);
             }
         }
 
-        private void listView_result_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        //過去番組移動関係
+        private bool IsJumpPanelOpened { get{ return panel_timeJump.Visibility == Visibility.Visible; }}
+        private EpgViewPeriod SearchPeriod { get { return timeJumpView.GetDate(); } }
+        private void SetSearchPeriod()
         {
+            RefreshPeriod();
+            searchKeyView.checkBox_noArcSearch.IsChecked = !Settings.Instance.ArcSearch;
+            searchKeyView.checkBox_noArcSearch.Checked += (sender, e) => { if (Searched) SearchPg(); };
+            searchKeyView.checkBox_noArcSearch.Unchecked += (sender, e) => { if (Searched) SearchPg(); };
+            timeJumpView.SetSearchMode();
+            timeJumpView.JumpDateClick += pr => SearchPg();
+            timeJumpView.DateChanged += RefreshMoveButtonStatus;
+            button_Panel.Click += (sender, e) => button_Panel_Click();
+            button_Prev.Click += (sender, e) => button_Time_Click(MoveTimeTarget(-1));
+            button_Next.Click += (sender, e) => button_Time_Click(MoveTimeTarget(1));
+            button_Reset.Click += (sender, e) => button_Time_Click(prdef.DefPeriod);
+            button_Prev.ToolTipOpening += (sender, e) => button_Time_Tooltip(button_Prev, e, -1);
+            button_Next.ToolTipOpening += (sender, e) => button_Time_Tooltip(button_Next, e, 1);
+            button_Reset.ToolTipOpening += (sender, e) => button_Reset.ToolTip = prdef.DefPeriod.ConvertText(prdef.DefPeriod.End);
+        }
+        private void RefreshPeriod()
+        {
+            prdef = new EpgViewPeriodDef(Settings.Instance.EpgSettingList[0]);
+            timeJumpView.RefreshPeriod();
+            EpgViewPeriod pr = timeJumpView.GetDate();
+            if (pr.Equals(prdef.DefPeriod) == false) pr.Days = prdef.InitMoveDays;
+            timeJumpView.SetDate(pr);
+        }
+        private void button_Panel_Click()
+        {
+            panel_timeJump.Visibility = IsJumpPanelOpened ? Visibility.Collapsed : Visibility.Visible;
+            button_Panel.Content = IsJumpPanelOpened ? "↑" : "↓";
+            RefreshMoveButtonStatus();
+        }
+        private void button_Time_Click(EpgViewPeriod period)
+        {
+            timeJumpView.SetDate(period);
+            SearchPg();
+        }
+        private void button_Time_Tooltip(Button btn, ToolTipEventArgs e, int mode)
+        {
+            e.Handled = !btn.IsEnabled;
+            btn.ToolTip = MoveTimeTarget(mode).ConvertText(DateTime.MaxValue);
+        }
+        private EpgViewPeriod MoveTimeTarget(int mode)
+        {
+            EpgViewPeriod pr = timeJumpView.GetDate();
+            if (pr.Equals(prdef.DefPeriod)) pr.Days = prdef.InitMoveDays;
+            pr.Start += TimeSpan.FromDays(mode * (int)pr.Days);
+            return pr;
+        }
+        private void RefreshMoveButtonStatus()
+        {
+            searchKeyView.checkBox_noArcSearch.IsEnabled = !IsJumpPanelOpened;
+            if (IsJumpPanelOpened == false) return;
+            button_Prev.IsEnabled = SearchPeriod.Start > CommonManager.Instance.DB.EventTimeMin;
+            button_Next.IsEnabled = SearchPeriod.End < prdef.DefPeriod.End;
+            timeJumpView.SetDate(null, CommonManager.Instance.DB.EventTimeMin);
+        }
+    }
+    public class SearchWindowBase : AutoAddWindow<SearchWindow, EpgAutoAddData>
+    {
+        public SearchWindowBase() { }//デザイナ用
+        public SearchWindowBase(EpgAutoAddData data = null, AutoAddMode mode = AutoAddMode.Find) : base(data, mode) { }
+    }
+
+    public enum AutoAddMode { Find, NewAdd, Change }
+    public class AutoAddWindow<T, S> : HideableWindow<T> where S : AutoAddData
+    {
+        protected ulong dataID = 0;
+        protected override ulong DataID { get { return dataID; } }
+        protected override IEnumerable<KeyValuePair<ulong, object>> DataRefList { get { return AutoAddData.GetDBManagerList(typeof(S)).Select(d => new KeyValuePair<ulong, object>(d.DataID, d)); } }
+        //予約ウィンドウからのリスト検索、ジャンプ関連の対応
+        public AutoAddWinListView DataListView { get; protected set; }
+        public class AutoAddWinListView : DataItemViewBase
+        {
+            public ListBox listbox;
+            public AutoAddWinListView(ListBox lb) { listbox = lb; }
+            protected override ListBox DataListBox { get { return listbox; } }
+        }
+
+        protected virtual string AutoAddString { get { return ""; } }
+        protected AutoAddData autoAddData { get { return AutoAddData.AutoAddList(typeof(S), (uint)dataID); } }
+
+        public AutoAddWindow(S data = null, AutoAddMode mode = AutoAddMode.Find)
+        {
+            this.Loaded += (sender, e) => { SetData(data); SetViewMode(data != null && DataID == 0 ? AutoAddMode.NewAdd : mode); UpdateViewSelection(); };
+        }
+
+        protected AutoAddMode winMode = AutoAddMode.Find;
+        protected void SetViewMode(AutoAddMode mode)
+        { 
+            winMode = mode;
+            SetWindowTitle();
+            if (mode != AutoAddMode.Change) dataID = 0;
+        }
+        public virtual void SetWindowTitle() { }
+
+        public virtual AutoAddData GetData() { return null; }
+        protected virtual bool SetData(S data) { return false; }
+
+        //検索の更新がある
+        public override void ChangeData(object data)
+        {
+            if (SetData(data as S) == false) return;
+            SetViewMode(DataID == 0 ? AutoAddMode.NewAdd : AutoAddMode.Change);
+        }
+
+        //proc 0:追加、1:変更、2:削除、3:予約ごと削除
+        static string[] cmdMsg = new string[] { "追加", "変更", "削除", "予約ごと削除" };
+        protected virtual int CheckAutoAddChange(ExecutedRoutedEventArgs e, int proc)
+        {
+            if (proc != 3)
             {
-                foreach (FrameworkElement item in ((ListViewItem)sender).ContextMenu.Items)
+                if (CmdExeUtil.IsMessageBeforeCommand(e) == true)
                 {
-                    if (item.Name == "cmdDlt")
+                    if (MessageBox.Show(AutoAddString + "を" + cmdMsg[proc] + "します。\r\nよろしいですか？", cmdMsg[proc] + "の確認", MessageBoxButton.OKCancel) != MessageBoxResult.OK)
+                    { return -2; }
+                }
+            }
+            else
+            {
+                if (CmdExeUtil.CheckAllProcCancel(e, autoAddData.IntoList(), true) == true)
+                { return -1; }
+            }
+
+            if (proc != 0)
+            {
+                if (autoAddData == null)
+                {
+                    MessageBox.Show("項目がありません。\r\n" + "既に削除されています。", "データエラー", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                    SetViewMode(AutoAddMode.NewAdd);
+                    return 1;
+                }
+            }
+
+            return 0;
+        }
+
+        protected void autoadd_add(object sender, ExecutedRoutedEventArgs e) { autoadd_add_chg(e, 0); }
+        protected void autoadd_chg(object sender, ExecutedRoutedEventArgs e) { autoadd_add_chg(e, 1); }
+        protected void autoadd_add_chg(ExecutedRoutedEventArgs e, int code)
+        {
+            bool ret = false;
+            try
+            {
+                AutoAddData data = GetData();
+                if (data != null && CheckAutoAddChange(e, code) == 0)
+                {
+                    if (code == 0)
                     {
-                        item.IsEnabled = listView_result.SelectedItems.Cast<SearchItem>().Any(a => a.IsReserved);
+                        ret = MenuUtil.AutoAddAdd(data.IntoList());
+                        if (ret == true)
+                        {
+                            //割り当てられたIDが欲しいだけなのでEpgTimer内のもろもろは再構築せず、Srvからデータだけ取得する。
+                            SetData(AutoAddData.GetAutoAddListSrv(typeof(S)).LastOrDefault() as S);
+                            SetViewMode(AutoAddMode.Change);
+                        }
                     }
-                    else if (item.Name == "cmdChg")
+                    else
                     {
-                        //選択されているすべての予約が同じ設定の場合だけチェックを表示する
-                        int noRec = -1;
-                        int recMode = -1;
-                        int priority = -1;
-                        foreach (SearchItem selItem in listView_result.SelectedItems)
-                        {
-                            if (selItem.IsReserved == true)
-                            {
-                                if (noRec < 0)
-                                {
-                                    noRec = selItem.ReserveInfo.RecSetting.IsNoRec() ? 1 : 0;
-                                    recMode = selItem.ReserveInfo.RecSetting.GetRecMode();
-                                    priority = selItem.ReserveInfo.RecSetting.Priority;
-                                }
-                                else
-                                {
-                                    noRec = noRec != (selItem.ReserveInfo.RecSetting.IsNoRec() ? 1 : 0) ? 2 : noRec;
-                                    recMode = recMode != selItem.ReserveInfo.RecSetting.GetRecMode() ? -1 : recMode;
-                                    priority = priority != selItem.ReserveInfo.RecSetting.Priority ? -1 : priority;
-                                }
-                            }
-                        }
-                        item.IsEnabled = noRec >= 0;
-                        var itemChg = (MenuItem)item;
-                        itemChg.Items.Cast<FrameworkElement>().First(a => a.Name == "cmdNo").Visibility =
-                            (noRec == 0 ? Visibility.Visible : Visibility.Collapsed);
-                        itemChg.Items.Cast<FrameworkElement>().First(a => a.Name == "cmdNoInv").Visibility =
-                            (noRec == 1 ? Visibility.Visible : Visibility.Collapsed);
-                        itemChg.Items.Cast<FrameworkElement>().First(a => a.Name == "cmdNoToggle").Visibility =
-                            (noRec == 2 ? Visibility.Visible : Visibility.Collapsed);
-                        int i = itemChg.Items.IndexOf(itemChg.Items.Cast<FrameworkElement>().First(a => a.Name == "cmdRecModeAll"));
-                        for (int j = 0; j <= 4; j++)
-                        {
-                            ((MenuItem)itemChg.Items[i + j]).IsChecked = (j == recMode);
-                        }
-                        var itemPri = (MenuItem)itemChg.Items.Cast<FrameworkElement>().First(a => a.Name == "cmdPri");
-                        for (int j = 0; j < itemPri.Items.Count; j++)
-                        {
-                            ((MenuItem)itemPri.Items[j]).IsChecked = (j + 1 == priority);
-                        }
-                        itemPri.Header = string.Format((string)itemPri.Tag, priority >= 0 ? "" + priority : "*");
-                    }
-                    else if (item.Name == "cmdAdd")
-                    {
-                        ((MenuItem)item).Items.Clear();
-                        item.IsEnabled = listView_result.SelectedItems.Cast<SearchItem>().Any(a => a.IsReserved == false);
-                        if (item.IsEnabled)
-                        {
-                            foreach (RecPresetItem info in Settings.GetRecPresetList())
-                            {
-                                var menuItem = new MenuItem();
-                                menuItem.Header = info.DisplayName;
-                                menuItem.Tag = info.ID;
-                                menuItem.Click += buttonOrMenuItem_add_reserve_Click;
-                                ((MenuItem)item).Items.Add(menuItem);
-                            }
-                        }
+                        ret = MenuUtil.AutoAddChange(data.IntoList());
                     }
                 }
             }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+            StatusManager.StatusNotifySet(ret, AutoAddString + "を" + cmdMsg[code]);
         }
 
+        protected void autoadd_del1(object sender, ExecutedRoutedEventArgs e) { autoadd_del(e, 2); }
+        protected void autoadd_del2(object sender, ExecutedRoutedEventArgs e) { autoadd_del(e, 3); }
+        protected void autoadd_del(ExecutedRoutedEventArgs e, int code)
+        {
+            bool ret = false;
+            try
+            {
+                if (CheckAutoAddChange(e, code) == 0)
+                {
+                    if (code == 2)
+                    {
+                        ret = MenuUtil.AutoAddDelete(autoAddData.IntoList());
+                    }
+                    else
+                    {
+                        ret = MenuUtil.AutoAddDelete(autoAddData.IntoList(), true, true);
+                    }
+
+                    if (ret == true)
+                    {
+                        SetViewMode(AutoAddMode.NewAdd);
+                    }
+                }
+            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+            StatusManager.StatusNotifySet(ret, AutoAddString + "を" + cmdMsg[code]);
+        }
+
+        public static void UpdatesAutoAddViewOrderChanged(Dictionary<ulong, ulong> changeIDTable)
+        {
+            foreach (var win in Application.Current.Windows.OfType<AutoAddWindow<T, S>>())
+            {
+                win.UpdateAutoAddViewOrderChanged(changeIDTable);
+            }
+        }
+        protected void UpdateAutoAddViewOrderChanged(Dictionary<ulong, ulong> changeIDTable)
+        {
+            if (dataID == 0) return;
+
+            if (changeIDTable.ContainsKey(dataID) == false)
+            {
+                //ID無くなった
+                SetViewMode(AutoAddMode.NewAdd);
+            }
+            else
+            {
+                //新しいIDに変更
+                dataID = changeIDTable[dataID];
+            }
+        }
     }
 }

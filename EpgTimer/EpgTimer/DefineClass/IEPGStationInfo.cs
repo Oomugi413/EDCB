@@ -1,29 +1,12 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace EpgTimer
 {
-    public class IEPGStationInfo
+    public class IEPGStationInfo : IDeepCloneObj
     {
-        public string StationName
-        {
-            get;
-            set;
-        }
-        public ulong Key
-        {
-            get;
-            set;
-        }
-        public IEPGStationInfo DeepClone()
-        {
-            return (IEPGStationInfo)MemberwiseClone();
-        }
-        public override string ToString()
-        {
-            return StationName;
-        }
+        public string StationName { get; set; }
+        public ulong Key { get; set; }
+        public object DeepCloneObj() { return MemberwiseClone(); }
+        public override string ToString() { return StationName; }
     }
 }

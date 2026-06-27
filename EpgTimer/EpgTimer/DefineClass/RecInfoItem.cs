@@ -1,65 +1,67 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace EpgTimer
 {
-    class RecInfoItem
+    public class RecInfoItem : DataListItemBase
     {
-        public RecInfoItem(RecFileInfo item)
-        {
-            this.RecInfo = item;
-        }
-        public RecFileInfo RecInfo
-        {
-            get;
-            private set;
-        }
+        public RecInfoItem() { }
+        public RecInfoItem(RecFileInfo item) { RecInfo = item; }
+
+        public RecFileInfo RecInfo { get; private set; }
+        public override ulong KeyID { get { return RecInfo == null ? 0 : RecInfo.ID; } }
+        public override object DataObj { get { return RecInfo; } }
+
         public bool IsProtect
         {
-            set
-            {
-                RecInfo.ProtectFlag = Convert.ToByte(value);
-                CommonManager.CreateSrvCtrl().SendChgProtectRecInfo(new List<RecFileInfo>() { RecInfo });
-            }
+            set { EpgCmds.ChgOnOffCheck.Execute(this, null); }
             get { return RecInfo.ProtectFlag != 0; }
         }
         public string EventName
         {
             get { return RecInfo.Title; }
         }
+        public string EventNameValue
+        {
+            get { return Settings.Instance.TrimSortTitle == true ? MenuUtil.TrimKeyword(EventName) : EventName; }
+        }
         public string ServiceName
         {
             get { return RecInfo.ServiceName; }
         }
-        public CommonManager.TimeDuration StartTime
+        public string Duration
         {
-            get { return new CommonManager.TimeDuration(true, RecInfo.StartTime, true, RecInfo.DurationSecond); }
+            get { return CommonManager.ConvertDurationText(RecInfo.DurationSecond, Settings.Instance.RecInfoNoDurSecond); }
         }
-        public CommonManager.TimeDuration StartTimeNoDuration
+        public uint DurationValue
         {
-            get { return new CommonManager.TimeDuration(true, RecInfo.StartTime, true, double.NaN); }
+            get { return RecInfo.DurationSecond; }
         }
-        public TimeSpan Duration
+        public string StartTime
         {
-            get { return TimeSpan.FromSeconds(RecInfo.DurationSecond); }
+            get { return CommonManager.ConvertTimeText(RecInfo.StartTime, RecInfo.DurationSecond, Settings.Instance.RecInfoNoYear, Settings.Instance.RecInfoNoSecond, isNoEnd: Settings.Instance.RecInfoNoEnd); }
+        }
+        public long StartTimeValue
+        {
+            get { return RecInfo.StartTime.Ticks; }
         }
         public long Drops
         {
             get { return RecInfo.Drops; }
         }
+        public long DropsSerious
+        {
+            get { return RecInfo.DropsCritical; }
+        }
         public long Scrambles
         {
             get { return RecInfo.Scrambles; }
+        }
+        public long ScramblesSerious
+        {
+            get { return RecInfo.ScramblesCritical; }
         }
         public string Result
         {
@@ -73,82 +75,86 @@ namespace EpgTimer
         {
             get { return RecInfo.RecFilePath; }
         }
-        public uint ID
+        public override Brush BackColor
         {
-            get { return RecInfo.ID; }
+            get { return NowJumpingTable != 0 ? base.BackColor : BackColorBrush(); }
         }
-        public SolidColorBrush BackColor
+        public override Brush BackColor2
         {
-            get { return Settings.Instance.RecEndColorPosition == 0 ? DropScrambleBackColor : null; }
+            get { return BackColorBrush(true); }
         }
-        public SolidColorBrush AlternationBackColor
+        private Brush BackColorBrush(bool defTransParent = false)
         {
-            get { return (Settings.Instance.RecEndColorPosition == 0 ? DropScrambleBackColor : null) ?? Settings.BrushCache.RecEndDefBrush; }
-        }
-        public SolidColorBrush StartTimeBackColor
-        {
-            get { return Settings.Instance.RecEndColorPosition == 1 ? DropScrambleBackColor : null; }
-        }
-        public SolidColorBrush EventNameBackColor
-        {
-            get { return Settings.Instance.RecEndColorPosition == 2 ? DropScrambleBackColor : null; }
-        }
-        private SolidColorBrush DropScrambleBackColor
-        {
-            get
+            //通常表示
+            long drops = Settings.Instance.RecinfoErrCriticalDrops == false ? RecInfo.Drops : RecInfo.DropsCritical;
+            long scrambles = Settings.Instance.RecinfoErrCriticalDrops == false ? RecInfo.Scrambles : RecInfo.ScramblesCritical;
+
+            int idx = defTransParent ? -1 : 0;
+            if (Settings.Instance.RecInfoDropErrIgnore >= 0 && drops > Settings.Instance.RecInfoDropErrIgnore
+                || RecInfo.RecStatusBasic == RecEndStatusBasic.ERR)
             {
-                return RecInfo.Drops > 0 ? Settings.BrushCache.RecEndErrBrush :
-                       RecInfo.Scrambles > 0 ? Settings.BrushCache.RecEndWarBrush : null;
+                idx = 1;
+            }
+            else if (Settings.Instance.RecInfoDropWrnIgnore >= 0 && drops > Settings.Instance.RecInfoDropWrnIgnore
+                || Settings.Instance.RecInfoScrambleIgnore >= 0 && scrambles > Settings.Instance.RecInfoScrambleIgnore
+                || RecInfo.RecStatusBasic == RecEndStatusBasic.WARN)
+            {
+                idx = 2;
+            }
+            return idx < 0 ? null : Settings.BrushCache.RecEndBackColor[idx];
+        }
+        public override string ConvertInfoText(object param = null)
+        {
+            var mode = param is int ? (int)param : Settings.Instance.RecInfoToolTipMode;
+            if (mode == 1) return RecInfo.ProgramInfo;
+
+            string view = CommonManager.ConvertTimeText(RecInfo.StartTime, RecInfo.DurationSecond, false, false, false) + "\r\n";
+            view += ServiceName + "(" + NetworkName + ")" + "\r\n";
+            view += EventName + "\r\n\r\n";
+
+            view += "結果 : " + Result + "\r\n";
+            view += "録画ファイル : " + RecFilePath + "\r\n";
+            view += ConvertDropText() + "\r\n";
+            view += ConvertScrambleText() + "\r\n\r\n";
+
+            view += CommonManager.Convert64PGKeyString(RecInfo.Create64PgKey()) + "\r\n\r\n";
+
+            view += "録画情報ID : " + string.Format("{0} (0x{0:X})", DisplayID);
+            return view;
+        }
+        public string DropInfoText
+        {
+            get { return ConvertDropText("D:") + " " + ConvertScrambleText("S:"); }
+        }
+        private string ConvertDropText(string title = "Drop : ")
+        {
+            if (Settings.Instance.RecinfoErrCriticalDrops == true)
+            {
+                return "*" + title + RecInfo.DropsCritical.ToString();
+            }
+            else
+            {
+                return title + RecInfo.Drops.ToString();
             }
         }
-        public SolidColorBrush ResultBackColor
+        private string ConvertScrambleText(string title = "Scramble : ")
         {
-            get
+            if (Settings.Instance.RecinfoErrCriticalDrops == true)
             {
-                return RecInfo.RecStatus == (uint)RecEndStatus.NORMAL ||
-                       RecInfo.RecStatus == (uint)RecEndStatus.CHG_TIME ||
-                       RecInfo.RecStatus == (uint)RecEndStatus.NEXT_START_END ? null :
-                       RecInfo.RecStatus == (uint)RecEndStatus.ERR_END ||
-                       RecInfo.RecStatus == (uint)RecEndStatus.END_SUBREC ||
-                       RecInfo.RecStatus == (uint)RecEndStatus.NOT_START_HEAD ? Settings.BrushCache.RecEndWarBrush : Settings.BrushCache.RecEndErrBrush;
+                return "*" + title + RecInfo.ScramblesCritical.ToString();
+            }
+            else
+            {
+                return title + RecInfo.Scrambles.ToString();
             }
         }
-        public TextBlock ToolTipView
+    }
+
+    public static class RecInfoItemEx
+    {
+        public static List<RecFileInfo> RecInfoList(this ICollection<RecInfoItem> itemlist)
         {
-            get
-            {
-                if (Settings.Instance.NoToolTip == true)
-                {
-                    return null;
-                }
-                string view = "";
-                {
-                    view = StartTime + "\r\n";
-
-                    view += ServiceName;
-                    view += " (" + NetworkName + ")" + "\r\n";
-                    view += EventName + "\r\n";
-                    view += "\r\n";
-                    view += "結果 : " + RecInfo.Comment + "\r\n";
-                    view += "録画ファイル : " + RecInfo.RecFilePath + "\r\n";
-                    view += "\r\n";
-
-                    view += "OriginalNetworkID : " + RecInfo.OriginalNetworkID.ToString() + " (0x" + RecInfo.OriginalNetworkID.ToString("X4") + ")\r\n";
-                    view += "TransportStreamID : " + RecInfo.TransportStreamID.ToString() + " (0x" + RecInfo.TransportStreamID.ToString("X4") + ")\r\n";
-                    view += "ServiceID : " + RecInfo.ServiceID.ToString() + " (0x" + RecInfo.ServiceID.ToString("X4") + ")\r\n";
-                    view += "EventID : " + RecInfo.EventID.ToString() + " (0x" + RecInfo.EventID.ToString("X4") + ")\r\n";
-                    view += "\r\n";
-                    view += "Drop : " + Drops + "\r\n";
-                    view += "Scramble : " + Scrambles;
-                }
-
-
-                TextBlock block = new TextBlock();
-                block.Text = view;
-                block.MaxWidth = 400;
-                block.TextWrapping = TextWrapping.Wrap;
-                return block;
-            }
+            return itemlist.Where(item => item != null).Select(item => item.RecInfo).ToList();
         }
     }
 }

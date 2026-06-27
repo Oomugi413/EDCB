@@ -1,10 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-
 using System.Drawing;
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Interop;
 using System.Runtime.InteropServices;
@@ -74,11 +71,8 @@ namespace EpgTimer
             }
         }
 
-        public int ForceHideBalloonTipSec
-        {
-            get;
-            set;
-        }
+        public int ForceHideBalloonTipSec { get; set; }
+        public bool BalloonTipRealtime { get; set; }
 
         public bool Visible
         {
@@ -152,7 +146,7 @@ namespace EpgTimer
             }
         }
 
-        public void ShowBalloonTip(string title, string tips, int timeOutMSec, bool realtime)
+        public void ShowBalloonTip(string title, string tips, int timeOutMSec = 10 * 1000)
         {
             if (Visible)
             {
@@ -163,7 +157,7 @@ namespace EpgTimer
                 nid.cbSize = Marshal.SizeOf(nid);
                 nid.hWnd = hwndSource.Handle;
                 nid.uID = 1;
-                nid.uFlags = NIF_INFO | (realtime ? NIF_REALTIME : 0);
+                nid.uFlags = NIF_INFO | (BalloonTipRealtime ? NIF_REALTIME : 0);
                 nid.szTip = "";
                 nid.szInfo = tips.Length > 255 ? tips.Substring(0, 252) + "..." : tips;
                 nid.uTimeoutOrVersion = (uint)timeOutMSec;
@@ -244,6 +238,77 @@ namespace EpgTimer
         {
             [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
             public static extern bool Shell_NotifyIcon(uint dwMessage, [In] ref NOTIFYICONDATA lpData);
+        }
+    }
+
+    sealed class TrayManager
+    {
+        static TrayManager() { Tray = new TaskTrayClass(CommonManager.MainWindow); }
+        public static TaskTrayClass Tray { get; private set; }
+
+        private static uint srvState = uint.MaxValue;
+        public static bool IsSrvLost { get { return srvState == uint.MaxValue; } }
+        public static void SrvLosted(bool updateTray = true) { UpdateInfo(uint.MaxValue, updateTray); }
+        public static void UpdateInfo(uint? srvStatus = null, bool updateTray = true)
+        {
+            if (srvStatus != null) srvState = (uint)srvStatus;
+            if (Settings.Instance.ShowTray == false || updateTray == false) return;
+
+            var sortList = CommonManager.Instance.DB.ReserveList.Values
+                .Where(info => info.IsEnabled == true && info.IsOver() == false)
+                .OrderBy(info => info.StartTimeActual).ToList();
+
+            bool isOnPreRec = false;
+            string infoText = IsSrvLost == true ? "[未接続]\r\n(?)" : "";
+            infoText += srvState == 2 ? "EPG取得中\r\n" : "";
+
+            if (sortList.Count == 0)
+            {
+                infoText += "次の予約なし";
+            }
+            else
+            {
+                if (sortList[0].IsOnRec() == true)
+                {
+                    sortList = sortList.FindAll(info => info.IsOnRec());
+                    infoText += "録画中:";
+                }
+                else
+                {
+                    var PreRecTime = CommonUtil.EdcbNowEpg.AddMinutes(Settings.Instance.RecAppWakeTime);
+                    isOnPreRec = sortList[0].OnTime(PreRecTime) >= 0;
+                    if (isOnPreRec == true) //録画準備中
+                    {
+                        sortList = sortList.FindAll(info => info.OnTime(PreRecTime) >= 0);//あまり意味無い
+                        infoText += "録画準備中:";
+                    }
+                    else if (Settings.Instance.UpdateTaskText == true && sortList[0].OnTime(PreRecTime.AddMinutes(30)) >= 0) //30分以内に録画準備に入るもの
+                    {
+                        sortList = sortList.FindAll(info => info.OnTime(PreRecTime.AddMinutes(30)) >= 0);
+                        infoText += "まもなく録画:";
+                    }
+                    else
+                    {
+                        sortList = sortList.Take(1).ToList(); 
+                        infoText += "次の予約:";
+                    }
+                }
+
+                //FindAll()が順次検索、OrderBy()は安定ソートなのでこれでOK
+                ReserveData first = sortList.OrderBy(info => info.IsWatchMode).First();
+                infoText += first.StationName + " " + new ReserveItem(first).StartTimeShort + " " + first.Title;
+                string endText = (sortList.Count() <= 1 ? "" : "\r\n他" + (sortList.Count() - 1).ToString());
+                infoText = CommonUtil.LimitLenString(infoText, 63 - endText.Length) + endText;
+                if (first.IsWatchMode == true) infoText = infoText.Replace("録画", "視聴");
+            }
+
+            Tray.Text = infoText;
+
+            if      (IsSrvLost == true)  Tray.IconUri = new Uri("pack://application:,,,/Resources/TaskIconGray.ico");
+            else if (srvState == 1)      Tray.IconUri = new Uri("pack://application:,,,/Resources/TaskIconRed.ico");
+            else if (isOnPreRec == true) Tray.IconUri = new Uri("pack://application:,,,/Resources/TaskIconOrange.ico");
+            else if (srvState == 2)      Tray.IconUri = new Uri("pack://application:,,,/Resources/TaskIconGreen.ico");
+            else                         Tray.IconUri = new Uri("pack://application:,,,/Resources/EpgTimer_Bon_Vista_blue_rev2.ico");
         }
     }
 }

@@ -1,0 +1,33 @@
+﻿<local:AttendantWindow x:Class="EpgTimer.SettingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:EpgTimer"
+        Title="設定" Height="580" Width="780" xmlns:my="clr-namespace:EpgTimer.Setting" >
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="auto" />
+        </Grid.RowDefinitions>
+        <TabControl Name="tabControl">
+            <TabItem Header="基本設定" Name="tabItem_basic">
+                <my:SetBasicView x:Name="setBasicView" />
+            </TabItem>
+            <TabItem Header="動作設定" Name="tabItem_app">
+                <my:SetAppView x:Name="setAppView" />
+            </TabItem>
+            <TabItem Header="各画面の設定" Name="tabItem_epgView">
+                <my:SetEpgView x:Name="setEpgView" />
+            </TabItem>
+            <TabItem Header="外部アプリケーション" Name="tabItem_otherApp">
+                <my:SetOtherAppView x:Name="setOtherAppView" />
+            </TabItem>
+        </TabControl>
+        <DockPanel Grid.Row="1" Margin="30,10,30,6" HorizontalAlignment="Right" >
+            <Button Content="再読込" Margin="0,0,20,0" Name="button_Reload" MinWidth="75"/>
+            <Button Content="適用" Margin="0,0,20,0" Name="button_Apply" MinWidth="75"/>
+            <Button Content="OK" Margin="0,0,20,0" Name="button_OK" MinWidth="75" ToolTip="適用して閉じる"/>
+            <Button Content="キャンセル" Name="button_cancel" MinWidth="75" IsCancel="True" />
+        </DockPanel>
+    </Grid>
+</local:AttendantWindow>

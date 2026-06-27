@@ -21,10 +21,15 @@ namespace EpgTimer
     {
         No = 0, //なし
         EpgData = 1, //EPGデータ更新
+        EpgDatabaseInfo = 0x10000000 | EpgData, //EPGアーカイブの情報更新、EpgTimer内部でのみ使用。
+        EpgDataAdd = 0x10010000 | EpgData, //EPGの過去データ追加、EpgTimer内部でのみ使用。
         ReserveInfo = 2, //予約情報更新
+        ReserveName = 0x10000000 | ReserveInfo, //予約名のみ更新、EpgTimer内部でのみ使用。
         RecInfo = 3, //録画結果更新
         AutoAddEpgInfo = 4, //EPG自動予約登録更新
         AutoAddManualInfo = 5, //プログラム自動予約登録更新
+        PlugInFile = 6, //PlugIn系のファイル一覧更新
+        IniFile = 51,//iniファイルの更新。
         SrvStatus = 100,
         PreRecStart = 101,
         RecStart = 102,
@@ -36,15 +41,24 @@ namespace EpgTimer
         EpgCapEnd = 108,
     };
 
+    //MainWindowへ処理を依頼
+    public enum MainProcItem : uint
+    {
+        EpgDataLoaded, //EPGデータ更新完了
+        EpgDataSearch, //EPG表示用データの一部更新
+        EpgDataAddLoaded, //EPGデータの追加更新
+        ReserveInfo, //予約情報更新
+        ChSet5Logo, //ロゴの更新
+    };
+
     public enum EventInfoTextMode : uint
     {
         BasicInfo,
-        BasicInfoForProgramText, //EpgTimerSrvの番組情報と同じ形式
         BasicText,
-        BasicTextForProgramText, //EpgTimerSrvの番組情報と同じ形式
         ExtendedText,
-        ExtendedTextForProgramText, //EpgTimerSrvの番組情報と同じ形式
         PropertyInfo,
+        All,
+        AllForProgramText,
     };
 
     //StructDef.hより
@@ -65,5 +79,21 @@ namespace EpgTimer
         NOT_START_HEAD = 13,//一部のみ録画が実行された可能性があります
         ERR_CH_CHG = 14,    //指定チャンネルのデータがBonDriverから出力されなかった可能性があります
         ERR_END2 = 15       //ファイル保存で致命的なエラーが発生した可能性があります
+    };
+    //EpgTimer内部用、集約した簡易ステータス
+    public enum RecEndStatusBasic : uint
+    {
+        DEFAULT = 32,//エラー無し
+        WARN = 64,	//軽微なエラー
+        ERR = 128   //重度なエラー
+    };
+
+    //EpgTimer内部用、予約モード
+    public enum ReserveMode : uint
+    {
+        KeywordAuto = 0,        //キーワード予約
+        ManualAuto = 1,	    //プログラム自動予約
+        EPG = 2,            //個別予約(EPG)
+        Program = 3         //個別予約(プログラム)
     };
 }

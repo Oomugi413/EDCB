@@ -1,15 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
 using System.Windows.Shapes;
 
 namespace EpgTimer.EpgView
@@ -17,22 +13,26 @@ namespace EpgTimer.EpgView
     /// <summary>
     /// TimeView.xaml の相互作用ロジック
     /// </summary>
-    public partial class TimeView : UserControl
+    public partial class TimeView : UserControl, IEpgSettingAccess, IEpgViewDataSet
     {
         private List<DateTime> canvasTimeList = new List<DateTime>();
-        private double canvasHeightPerHour;
-
+        
         public TimeView()
         {
             InitializeComponent();
+            scrollViewer.PreviewMouseWheel += new MouseWheelEventHandler((sende, e) => e.Handled = true);
+        }
+
+        public int EpgSettingIndex { get; private set; }
+        public void SetViewData(EpgViewData data)
+        {
+            EpgSettingIndex = data.EpgSettingIndex;
+            Background = this.EpgBrushCache().TimeBorderColor;
         }
 
         public void ClearMarker()
         {
-            foreach (Line item in canvas.Children.OfType<Line>().ToArray())
-            {
-                canvas.Children.Remove(item);
-            }
+            canvas.Children.Clear();
         }
 
         public void ClearInfo()
@@ -41,73 +41,66 @@ namespace EpgTimer.EpgView
             ClearMarker();
             canvasTimeList.Clear();
             canvas.Height = 0;
+            spacer.Text = "14/04";
         }
 
-        public void SetTime(IEnumerable<DateTime> sortedTimeList, double heightPerHour, bool needTimeOnly, List<Brush> brushList, bool weekMode)
+        public void SetTime(IEnumerable<DateTime> sortedTimeList, bool weekMode, bool tunerMode = false)
         {
-            ClearInfo();
-            if (heightPerHour > 1)
             {
-                foreach (DateTime time in sortedTimeList)
+                ClearInfo();
+                bool? use28 = Settings.Instance.LaterTimeUse == true ? null : (bool?)false;
+                double h3L = (12 + 3) * 3;
+                double h6L = h3L * 2;
+
+                foreach (DateTime time1 in sortedTimeList)
                 {
-                    TextBlock item = new TextBlock();
-                    item.Height = heightPerHour - 1;
-                    canvasTimeList.Add(time);
+                    var timeMod = new DateTime28(time1, use28);
+                    DateTime time = timeMod.DateTimeMod;
+                    string HourMod = timeMod.HourMod.ToString();
 
-                    if (weekMode == false)
-                    {
-                        if (time.Hour % 3 == 0 || needTimeOnly)
-                        {
-                            item.Inlines.Add(new Run(time.ToString("M\\/d")));
-                            item.Inlines.Add(new LineBreak());
-                            if (heightPerHour >= 60)
-                            {
-                                Run weekday = new Run(time.ToString("ddd"));
-                                weekday.Foreground = time.DayOfWeek == DayOfWeek.Saturday ? Brushes.Blue :
-                                                     time.DayOfWeek == DayOfWeek.Sunday ? Brushes.Red : Brushes.White;
-                                weekday.FontWeight = FontWeights.Bold;
-                                item.Inlines.Add(new Run("("));
-                                item.Inlines.Add(weekday);
-                                item.Inlines.Add(new Run(")"));
-                            }
-                        }
-                        else
-                        {
-                            if (heightPerHour >= 90)
-                            {
-                                item.Inlines.Add(new LineBreak());
-                            }
-                        }
-                    }
-                    if (heightPerHour >= 60)
-                    {
-                        item.Inlines.Add(new LineBreak());
-                        if (heightPerHour >= 90)
-                        {
-                            item.Inlines.Add(new LineBreak());
-                        }
-                    }
-                    Run text = new Run(time.Hour.ToString());
-                    text.FontSize = 13;
-                    text.FontWeight = FontWeights.Bold;
-                    item.Inlines.Add(text);
-
-                    item.Margin = new Thickness(1, 1, 1, 0);
-                    item.Background = brushList[time.Hour / 6];
-                    item.TextAlignment = TextAlignment.Center;
-                    item.Foreground = Brushes.White;
-                    item.FontSize = 12;
+                    canvasTimeList.Add(time1);
+                    var item = ViewUtil.GetPanelTextBlock();
                     stackPanel_time.Children.Add(item);
+                    item.Margin = new Thickness(1, 0, 1, 1);
+
+                    if (tunerMode == false)
+                    {
+                        item.Foreground = this.EpgBrushCache().TimeFontColor;
+                        item.Background = this.EpgBrushCache().TimeColorList[time1.Hour / 6];
+                        item.Height = 60 * this.EpgStyle().MinHeight - item.Margin.Top - item.Margin.Bottom;
+                        if (weekMode == false)
+                        {
+                            item.Inlines.Add(new Run(time.ToString("M/d\r\n")));
+                            if (item.Height >= h3L)
+                            {
+                                var color = time.DayOfWeek == DayOfWeek.Sunday ? Brushes.Red : time.DayOfWeek == DayOfWeek.Saturday ? Brushes.Blue : item.Foreground;
+                                var weekday = new Run(time.ToString("ddd")) { Foreground = color, FontWeight = FontWeights.Bold };
+                                item.Inlines.AddRange(new Run[] { new Run("("), weekday, new Run(")") });
+                            }
+                        }
+                        if (item.Height >= h3L) item.Inlines.Add(new LineBreak());
+                        if (item.Height >= h6L) item.Inlines.Add(new LineBreak());
+                        item.Inlines.Add(new Run(HourMod) { FontSize = 13, FontWeight = FontWeights.Bold });
+                    }
+                    else
+                    {
+                        item.Foreground = time.DayOfWeek == DayOfWeek.Sunday ? Brushes.Red : time.DayOfWeek == DayOfWeek.Saturday ? Brushes.Blue : Settings.BrushCache.TunerTimeFontColor;
+                        item.Background = Settings.BrushCache.TunerTimeBackColor;
+                        item.Height = 60 * Settings.Instance.TunerMinHeight - item.Margin.Top - item.Margin.Bottom;
+                        item.Text = time.ToString("M/d\r\n" + (item.Height >= h3L ? "(ddd)\r\n" : ""))
+                                                            + (item.Height >= h6L ? "\r\n" : "") + HourMod;
+                    }
                 }
-                canvasHeightPerHour = heightPerHour;
-                canvas.Height = canvasHeightPerHour * canvasTimeList.Count;
+
+                canvas.Height = 60 * this.EpgStyle().MinHeight * stackPanel_time.Children.Count;
             }
         }
-
         public void AddMarker(IEnumerable<KeyValuePair<DateTime, TimeSpan>> timeRanges, Brush brush)
         {
-            if (canvasTimeList.Count > 0)
+            if (canvasTimeList.Count > 0 && timeRanges.Any())
             {
+                spacer.Text = "014/04";
+                var canvasHeightPerHour = 60 * this.EpgStyle().MinHeight;
                 var yRanges = new List<Tuple<double, double>>();
                 foreach (KeyValuePair<DateTime, TimeSpan> timeRange in timeRanges)
                 {
@@ -149,16 +142,6 @@ namespace EpgTimer.EpgView
                     Canvas.SetZIndex(item, 10);
                 }
             }
-        }
-
-        private void scrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            e.Handled = true;
-        }
-
-        private void canvas_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            stackPanel_time.Width = canvas.ActualWidth;
         }
     }
 }

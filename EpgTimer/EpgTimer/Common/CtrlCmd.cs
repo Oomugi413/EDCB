@@ -102,7 +102,7 @@ namespace EpgTimer
             Version = version;
             tailPos = long.MaxValue;
         }
-        private byte[] ReadBytes(int size)
+        public byte[] ReadBytes(int size)
         {
             if (buff == null || buff.Length < size)
             {
@@ -271,6 +271,8 @@ namespace EpgTimer
         CMD_EPG_SRV_REGIST_GUI_TCP = 7,
         /// <summary>TCP接続のGUIアプリケーションのIPとポートの登録を解除</summary>
         CMD_EPG_SRV_UNREGIST_GUI_TCP = 8,
+        /// <summary>TCP接続のGUIアプリケーションのIPとポートの登録状況確認</summary>
+        CMD_EPG_SRV_ISREGIST_GUI_TCP = 9,
         /// <summary>ViewアプリのSrvPipeストリームを転送する</summary>
         CMD_EPG_SRV_RELAY_VIEW_STREAM = 301,
         /// <summary>予約一覧取得</summary>
@@ -305,6 +307,8 @@ namespace EpgTimer
         CMD_EPG_SRV_CHG_PROTECT_RECINFO2 = 2019,
         /// <summary>録画済み情報一覧取得（programInfoとerrInfoを除く）</summary>
         CMD_EPG_SRV_ENUM_RECINFO_BASIC2 = 2020,
+        /// <summary>録画済み情報一覧取得（指定IDリスト）</summary>
+        CMD_EPG_SRV_GET_RECINFO_LIST2 = 2022,
         /// <summary>録画済み情報取得</summary>
         CMD_EPG_SRV_GET_RECINFO2 = 2024,
         /// <summary>サーバー連携用　予約追加できるかのチェック（戻り値 0:追加不可 1:追加可能 2:追加可能だが開始か終了が重なるものあり 3:すでに同じ物がある）</summary>
@@ -337,8 +341,12 @@ namespace EpgTimer
         CMD_EPG_SRV_ENUM_PG_INFO = 1022,
         /// <summary>番組情報取得</summary>
         CMD_EPG_SRV_GET_PG_INFO = 1023,
+        /// <summary>番組情報取得(指定IDリスト)</summary>
+        CMD_EPG_SRV_GET_PG_INFO_LIST = 1024,
         /// <summary>番組検索</summary>
         CMD_EPG_SRV_SEARCH_PG = 1025,
+        /// <summary>番組検索(key毎版)</summary>
+        CMD_EPG_SRV_SEARCH_PG_BYKEY2 = 2127,
         /// <summary>番組情報一覧取得</summary>
         CMD_EPG_SRV_ENUM_PG_ALL = 1026,
         /// <summary>番組情報の最小開始時間と最大開始時間を取得する</summary>
@@ -379,6 +387,8 @@ namespace EpgTimer
         CMD_EPG_SRV_ENUM_PLUGIN = 1061,
         /// <summary>TVTestのチャンネル切り替え用の情報を取得する</summary>
         CMD_EPG_SRV_GET_CHG_CH_TVTEST = 1062,
+        /// <summary>設定ファイル(ini)の更新を通知させる</summary>
+        CMD_EPG_SRV_PROFILE_UPDATE = 1063,
         /// <summary>保存された情報通知ログを取得する</summary>
         CMD_EPG_SRV_GET_NOTIFY_LOG = 1065,
         /// <summary>起動中のチューナーについてサーバーが把握している情報の一覧を取得する</summary>
@@ -409,6 +419,8 @@ namespace EpgTimer
         CMD_EPG_SRV_NWPLAY_SET_IP = 1086,
         /// <summary>ストリーム配信用ファイルをタイムシフトモードで開く</summary>
         CMD_EPG_SRV_NWPLAY_TF_OPEN = 1087,
+        /// <summary>録画ファイルのネットワークパスを取得</summary>
+        CMD_EPG_SRV_GET_NETWORK_PATH = 1299,
         /// <summary>ダイアログを前面に表示</summary>
         CMD_TIMER_GUI_SHOW_DLG = 101,
         /// <summary>予約一覧の情報が更新された</summary>
@@ -546,6 +558,14 @@ namespace EpgTimer
         public ErrCode SendRegistTCP(uint port) { return SendCmdData(CtrlCmd.CMD_EPG_SRV_REGIST_GUI_TCP, port); }
         /// <summary>EpgTimerSrv.exeのTCP接続GUI登録を解除する</summary>
         public ErrCode SendUnRegistTCP(uint port) { return SendCmdData(CtrlCmd.CMD_EPG_SRV_UNREGIST_GUI_TCP, port); }
+        /// <summary>EpgTimerSrv.exeのTCP接続GUI登録状況確認</summary>
+        public ErrCode SendIsRegistTCP(uint port, ref bool registered)
+        {
+            object o = new int();
+            ErrCode retv = SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_ISREGIST_GUI_TCP, port, ref o);
+            registered = ((int)o == 0 ? false : true);
+            return retv;
+        }
         /// <summary>予約を削除する</summary>
         public ErrCode SendDelReserve(List<uint> val) { return SendCmdData(CtrlCmd.CMD_EPG_SRV_DEL_RESERVE, val); }
         /// <summary>チューナーごとの予約一覧を取得する</summary>
@@ -562,6 +582,8 @@ namespace EpgTimer
         public ErrCode SendEnumPgInfo(ulong service, ref List<EpgEventInfo> val) { object o = val; return SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_ENUM_PG_INFO, service, ref o); }
         /// <summary>指定イベントの番組情報を取得する</summary>
         public ErrCode SendGetPgInfo(ulong pgID, ref EpgEventInfo val) { object o = val; return SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_GET_PG_INFO, pgID, ref o); }
+        /// <summary>指定イベントリストの番組情報を取得する</summary>
+        public ErrCode SendGetPgInfoList(List<ulong> pgIDList, ref List<EpgEventInfo> val) { object o = val; return SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_GET_PG_INFO_LIST, pgIDList, ref o); }
         /// <summary>指定キーワードで番組情報を検索する</summary>
         public ErrCode SendSearchPg(List<EpgSearchKeyInfo> key, ref List<EpgEventInfo> val) { object o = val; return SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_SEARCH_PG, key, ref o); }
         /// <summary>指定キーワードで番組情報を検索する（IDのみ返す）</summary>
@@ -588,6 +610,8 @@ namespace EpgTimer
         public ErrCode SendGetChgChTVTest(ulong val, ref TvTestChChgInfo resVal) { object o = resVal; return SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_GET_CHG_CH_TVTEST, val, ref o); }
         /// <summary>保存された情報通知ログを取得する</summary>
         public ErrCode SendGetNotifyLog(int val, ref string resVal) { object o = resVal; var ret = SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_GET_NOTIFY_LOG, val, ref o); resVal = (string)o; return ret; }
+        /// <summary>設定ファイル(ini)の更新を通知させる</summary>
+        public ErrCode SendNotifyProfileUpdate(string val = "EpgTimer") { return SendCmdData(CtrlCmd.CMD_EPG_SRV_PROFILE_UPDATE, val); }
         /// <summary>起動中のチューナーについてサーバーが把握している情報の一覧を取得する</summary>
         public ErrCode SendEnumTunerProcess(ref List<TunerProcessStatusInfo> resVal) { object o = resVal; return ReceiveCmdData(CtrlCmd.CMD_EPG_SRV_ENUM_TUNER_PROCESS, ref o); }
         /// <summary>NetworkTVモードのViewアプリのチャンネルを切り替え（ID=0のみ）</summary>
@@ -633,12 +657,47 @@ namespace EpgTimer
         public ErrCode SendEnumRecInfo(ref List<RecFileInfo> val) { object o = val; return ReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_ENUM_RECINFO2, ref o); }
         /// <summary>録画済み情報一覧取得（programInfoとerrInfoを除く）</summary>
         public ErrCode SendEnumRecInfoBasic(ref List<RecFileInfo> val) { object o = val; return ReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_ENUM_RECINFO_BASIC2, ref o); }
+        /// <summary>録画済み情報一覧取得（指定IDリスト）</summary>
+        public ErrCode SendGetRecInfoList(List<uint> idList, ref List<RecFileInfo> val) { object o = val; return SendAndReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_GET_RECINFO_LIST2, idList, ref o); }
         /// <summary>録画済み情報取得</summary>
         public ErrCode SendGetRecInfo(uint id, ref RecFileInfo val) { object o = val; return SendAndReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_GET_RECINFO2, id, ref o); }
         /// <summary>録画済み情報のプロテクト変更</summary>
         public ErrCode SendChgProtectRecInfo(List<RecFileInfo> val) { return SendCmdData2(CtrlCmd.CMD_EPG_SRV_CHG_PROTECT_RECINFO2, val); }
         /// <summary>現在のNOTIFY_UPDATE_SRV_STATUSを取得する</summary>
         public ErrCode SendGetNotifySrvStatus(ref NotifySrvInfo val) { object o = val; return SendAndReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_GET_STATUS_NOTIFY2, 0, ref o); }
+        /// <summary>録画ファイルのネットワークパスを取得</summary>
+        public ErrCode SendGetRecFileNetworkPath(string path, ref string val) { object o = val; var ret = SendAndReceiveCmdData(CtrlCmd.CMD_EPG_SRV_GET_NETWORK_PATH, path, ref o); val = (string)o; return ret; }
+
+        /// <summary>指定キーワードで番組情報を検索する(キーごと)</summary>
+        public ErrCode SendSearchPgByKey(List<EpgSearchKeyInfo> key, ref List<List<EpgEventInfo>> val)
+        {
+            object o = new List<EpgEventInfo>();
+            ErrCode retv = SendAndReceiveCmdData2(CtrlCmd.CMD_EPG_SRV_SEARCH_PG_BYKEY2, key, ref o);
+
+            //送られてくるデータはダミー区切りのリストなので、ここで分解する。
+            if (retv == ErrCode.CMD_SUCCESS)
+            {
+                List<EpgEventInfo> data = (List<EpgEventInfo>)o;
+
+                var list1 = new List<EpgEventInfo>();
+
+                foreach (EpgEventInfo info in data)
+                {
+                    if (info.original_network_id == 0 && info.transport_stream_id == 0 &&
+                        info.service_id == 0 && info.event_id == 0 && info.ShortInfo == null)
+                    {
+                        val.Add(list1);
+                        list1 = new List<EpgEventInfo>();
+                    }
+                    else
+                    {
+                        list1.Add(info);
+                    }
+                }
+            }
+
+            return retv;
+        }
 #endregion
         /// <summary>BonDriverの切り替え</summary>
         public ErrCode SendViewSetBonDrivere(string val) { return SendCmdData(CtrlCmd.CMD_VIEW_APP_SET_BONDRIVER, val); }

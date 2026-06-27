@@ -1,31 +1,13 @@
 ﻿<UserControl x:Class="EpgTimer.EpgView.DateView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             mc:Ignorable="d" 
-             xmlns:local="clr-namespace:EpgTimer"
-             d:DesignHeight="300" d:DesignWidth="300">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="20" />
-            <RowDefinition Height="20" />
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="auto" />
-            <ColumnDefinition Name="columnDefinition" Width="*" />
-        </Grid.ColumnDefinitions>
-        <Button Click="button_time_Click" Content="←" ContextMenuOpening="button_time_ContextMenuOpening" IsEnabled="False" Name="button_prev" Visibility="Collapsed" Width="40">
-            <Button.ContextMenu>
-                <local:ContextMenuEx />
-            </Button.ContextMenu>
-        </Button>
-        <Button Click="button_time_Click" Content="→" ContextMenuOpening="button_time_ContextMenuOpening" Grid.Row="1" IsEnabled="False" Name="button_next" Visibility="{Binding Visibility, ElementName=button_prev}" Width="40">
-            <Button.ContextMenu>
-                <local:ContextMenuEx />
-            </Button.ContextMenu>
-        </Button>
-        <UniformGrid Grid.Column="1" Name="uniformGrid_day" Rows="1" />
-        <UniformGrid Grid.Column="1" Grid.Row="1" Name="uniformGrid_time" Rows="1" />
-    </Grid>
+             MinWidth="30" MinHeight="30">
+    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" >
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Name="columnDefinition" Width="*" />
+            </Grid.ColumnDefinitions>
+            <UniformGrid Name="uniformGrid_main" Rows="1" />
+        </Grid>
+    </ScrollViewer>
 </UserControl>

@@ -1,24 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-
 
 namespace EpgTimer.EpgView
 {
     /// <summary>
     /// WeekDayView.xaml の相互作用ロジック
     /// </summary>
-    public partial class WeekDayView : UserControl
+    public partial class WeekDayView : UserControl, IEpgSettingAccess, IEpgViewDataSet
     {
         public WeekDayView()
         {
@@ -30,17 +23,22 @@ namespace EpgTimer.EpgView
             stackPanel_day.Children.Clear();
         }
 
-        public void SetDay(List<DateTime> dayList, double serviceWidth, bool gradationHeader)
+        public int EpgSettingIndex { get; private set; }
+        public void SetViewData(EpgViewData data)
         {
-            stackPanel_day.Children.Clear();
-            if (serviceWidth > 2)
+            EpgSettingIndex = data.EpgSettingIndex;
+            Background = this.EpgBrushCache().WeekdayBorderColor;
+        }
+
+        public void SetDay(List<DateTime> dayList)
+        {
             {
+                stackPanel_day.Children.Clear();
                 foreach (DateTime time in dayList)
                 {
-                    TextBlock item = new TextBlock();
-
-                    item.Width = serviceWidth - 2;
-                    item.Text = time.ToString("M\\/d\r\n(ddd)");
+                    TextBlock item = ViewUtil.GetPanelTextBlock(time.ToString("M/d\r\n(ddd)"));
+                    item.Tag = time;
+                    item.Width = this.EpgStyle().ServiceWidth - 1;
 
                     Color backgroundColor;
                     if (time.DayOfWeek == DayOfWeek.Saturday)
@@ -58,27 +56,31 @@ namespace EpgTimer.EpgView
                         item.Foreground = Brushes.Black;
                         backgroundColor = Colors.White;
                     }
-                    var gridItem = new System.Windows.Controls.Primitives.UniformGrid();
-                    if (gradationHeader == false)
-                    {
-                        gridItem.Background = new SolidColorBrush(backgroundColor);
-                        gridItem.Background.Freeze();
-                    }
-                    else
-                    {
-                        gridItem.Background = ColorDef.GradientBrush(backgroundColor, 0.8);
-                    }
-
-                    gridItem.Margin = new Thickness(1, 1, 1, 1);
-                    item.TextAlignment = TextAlignment.Center;
-                    item.FontSize = 12;
-                    item.FontWeight = FontWeights.Bold;
-                    // 単にCenterだとやや重い感じになるので上げる
-                    item.Padding = new Thickness(0, 0, 0, 4);
+                    item.Padding = new Thickness(0, 0, 0, 2);
                     item.VerticalAlignment = VerticalAlignment.Center;
-                    gridItem.Children.Add(item);
-                    stackPanel_day.Children.Add(gridItem);
+                    item.FontWeight = FontWeights.Bold;
+
+                    var grid = new UniformGrid();
+                    grid.Background = this.EpgStyle().EpgGradationHeader ? (Brush)ColorDef.GradientBrush(backgroundColor, 0.8, 1.2) : new SolidColorBrush(backgroundColor);
+                    grid.Background.Freeze();
+                    grid.Margin = new Thickness(0, 1, 1, 1);
+                    grid.Tag = time;
+                    grid.Children.Add(item);
+                    stackPanel_day.Children.Add(grid);
                 }
+                rect_day.Width = this.EpgStyle().ServiceWidth - 1;
+                SetTodayMark();
+            }
+        }
+        public void SetTodayMark()
+        {
+            var date = CommonUtil.EdcbNow.Date;
+            var grid = stackPanel_day.Children.OfType<UniformGrid>().FirstOrDefault(grd => (DateTime)grd.Tag == date);
+            rect_day.Visibility = grid == null ? Visibility.Collapsed : Visibility.Visible;
+            if (grid != null)
+            {
+                rect_day.Stroke = ((TextBlock)grid.Children[0]).Foreground;
+                rect_day.Margin = new Thickness { Left = 1 + this.EpgStyle().ServiceWidth * stackPanel_day.Children.IndexOf(grid) };
             }
         }
     }

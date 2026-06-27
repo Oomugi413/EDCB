@@ -53,7 +53,7 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>Resources\TaskIconBlue.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\EpgTimer_Bon_Vista_blue_rev2.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>App.manifest</ApplicationManifest>
@@ -61,6 +61,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Core" />
@@ -84,31 +85,88 @@
     <Compile Include="AutoAddView.xaml.cs">
       <DependentUpon>AutoAddView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="DefineClass\ListViewHorizontalMouseScroller.cs" />
+    <Compile Include="EpgView\TimeMoveView.xaml.cs">
+      <DependentUpon>TimeMoveView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Menu\CmdHistory.cs" />
+    <Compile Include="DefineClass\TextBoxWithReadOnlyEffect.cs" />
+    <Compile Include="DefineClass\InfoSearchSetting.cs" />
+    <Compile Include="DefineClass\PicUpTitle.cs" />
+    <Compile Include="UserCtrlView\BlackoutWindow.xaml.cs">
+      <DependentUpon>BlackoutWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Common\BoxExchangeEditor.cs" />
+    <Compile Include="Common\ItemFontCache.cs" />
+    <Compile Include="Common\StatusManager.cs" />
+    <Compile Include="CtrlCmdDefEx\EpgEventInfoEx.cs" />
+    <Compile Include="CtrlCmdDefEx\RecSettingDataEx.cs" />
+    <Compile Include="CtrlCmdDefEx\ReserveDataEx.cs" />
+    <Compile Include="CtrlCmdDefEx\RecFileInfoEx.cs" />
+    <Compile Include="DefineClass\ValueConverter.cs" />
+    <Compile Include="DefineClass\RadioBtnSelect.cs" />
+    <Compile Include="DefineClass\GridViewSorterItem.cs" />
+    <Compile Include="DefineClass\SerializableDictionary.cs" />
+    <Compile Include="DefineClass\StringItem.cs" />
+    <Compile Include="DefineClass\DataListItemBase.cs" />
+    <Compile Include="DefineClass\DateTime28.cs" />
+    <Compile Include="DefineClass\RecSettingItem.cs" />
+    <Compile Include="DefineClass\NWPresetItem.cs" />
+    <Compile Include="DefineClass\InfoSearchItem.cs" />
+    <Compile Include="DefineClass\WindowSettingData.cs" />
+    <Compile Include="DefineClass\PresetItem.cs" />
+    <Compile Include="Setting\SetPresetWindow.xaml.cs">
+      <DependentUpon>SetPresetWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="AutoAddListView.xaml.cs">
+      <DependentUpon>AutoAddListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UserCtrlView\AttendantWindow.cs" />
+    <Compile Include="UserCtrlView\DataViewBase.cs" />
+    <Compile Include="UserCtrlView\ListViewController.cs" />
+    <Compile Include="Menu\MenuSettingData.cs" />
+    <Compile Include="Menu\EpgCmdsDef.cs" />
+    <Compile Include="Menu\CmdExeReserve.cs" />
+    <Compile Include="Common\GridViewSelector.cs" />
+    <Compile Include="Menu\MenuManager.cs" />
+    <Compile Include="Menu\CtxmData.cs" />
+    <Compile Include="CtrlCmdDefEx\AutoAddDataEx.cs" />
     <Compile Include="Common\CtrlCmd.cs" />
     <Compile Include="Common\CtrlCmdDef.cs" />
+    <Compile Include="Common\GridViewSorter.cs" />
+    <Compile Include="Common\ListViewSelectedKeeper.cs" />
     <Compile Include="ConnectWindow.xaml.cs">
       <DependentUpon>ConnectWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="DefineClass\KernelObjectSecurity.cs" />
-    <Compile Include="DefineClass\ListViewHorizontalMouseScroller.cs" />
-    <Compile Include="DefineClass\ValueConverter.cs" />
     <Compile Include="DefineClass\ListColumnInfo.cs" />
+    <Compile Include="EpgView\EpgMainViewBase.cs" />
+    <Compile Include="EpgView\EpgViewBase.cs" />
+    <Compile Include="Menu\CmdExe.cs" />
+    <Compile Include="Menu\CmdExeRecinfo.cs" />
+    <Compile Include="Menu\CmdExeAutoAdd.cs" />
+    <Compile Include="Menu\MenuCmds.cs" />
+    <Compile Include="Menu\MenuBinds.cs" />
     <Compile Include="Setting\ColorSetWindow.xaml.cs">
       <DependentUpon>ColorSetWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Common\CopyObj.cs" />
     <Compile Include="Common\IEPGFileClass.cs" />
+    <Compile Include="Menu\MenuUtil.cs" />
+    <Compile Include="Common\ViewUtil.cs" />
     <Compile Include="Common\NWConnectClass.cs" />
+    <Compile Include="CtrlCmdDefEx\CtrlCmdDefEx.cs" />
     <Compile Include="NotifyLogWindow.xaml.cs">
       <DependentUpon>NotifyLogWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="DefineClass\NotifySrvInfoItem.cs" />
-    <Compile Include="UserCtrlView\EpgAutoAddView.xaml.cs">
-      <DependentUpon>EpgAutoAddView.xaml</DependentUpon>
+    <Compile Include="Menu\SetContextMenuWindow.xaml.cs">
+      <DependentUpon>SetContextMenuWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="DefineClass\ManualAutoAddDataItem.cs" />
     <Compile Include="DefineClass\EpgAutoDataItem.cs" />
-    <Compile Include="UserCtrlView\ManualAutoAddView.xaml.cs">
-      <DependentUpon>ManualAutoAddView.xaml</DependentUpon>
+    <Compile Include="UserCtrlView\ListBoxDragMoverView.xaml.cs">
+      <DependentUpon>ListBoxDragMoverView.xaml</DependentUpon>
     </Compile>
     <Compile Include="RecInfoDescWindow.xaml.cs">
       <DependentUpon>RecInfoDescWindow.xaml</DependentUpon>
@@ -117,13 +175,16 @@
     <Compile Include="RecInfoView.xaml.cs">
       <DependentUpon>RecInfoView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="DefineClass\SelectableItem.cs" />
     <Compile Include="DefineClass\ServiceViewItem.cs" />
     <Compile Include="Setting\SetOtherAppView.xaml.cs">
       <DependentUpon>SetOtherAppView.xaml</DependentUpon>
     </Compile>
     <Compile Include="Common\TVTestCtrlClass.cs" />
-    <Compile Include="DefineClass\TunerNameViewItem.cs" />
-    <Compile Include="SuspendCheckWindow.xaml.cs">
+    <Compile Include="EpgView\TimeJumpView.xaml.cs">
+      <DependentUpon>TimeJumpView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UserCtrlView\SuspendCheckWindow.xaml.cs">
       <DependentUpon>SuspendCheckWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="TunerReserveViewCtrl\TunerReserveMainView.xaml.cs">
@@ -133,9 +194,6 @@
       <DependentUpon>TunerReserveNameView.xaml</DependentUpon>
     </Compile>
     <Compile Include="TunerReserveViewCtrl\TunerReservePanel.cs" />
-    <Compile Include="TunerReserveViewCtrl\TunerReserveTimeView.xaml.cs">
-      <DependentUpon>TunerReserveTimeView.xaml</DependentUpon>
-    </Compile>
     <Compile Include="TunerReserveViewCtrl\TunerReserveView.xaml.cs">
       <DependentUpon>TunerReserveView.xaml</DependentUpon>
     </Compile>
@@ -153,19 +211,14 @@
     <Compile Include="Common\ChSet5Class.cs" />
     <Compile Include="Common\ColorDefClass.cs" />
     <Compile Include="DefineClass\IEPGStationInfo.cs" />
-    <Compile Include="UserCtrlView\EpgDataViewSetting.xaml.cs">
-      <DependentUpon>EpgDataViewSetting.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="UserCtrlView\EpgDataViewSettingWindow.xaml.cs">
+    <Compile Include="Setting\EpgDataViewSettingWindow.xaml.cs">
       <DependentUpon>EpgDataViewSettingWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="EpgView\EpgListMainView.xaml.cs">
       <DependentUpon>EpgListMainView.xaml</DependentUpon>
     </Compile>
     <Compile Include="DefineClass\SearchItem.cs" />
-    <Compile Include="DefineClass\ServiceItem.cs" />
     <Compile Include="DefineClass\ReserveItem.cs" />
-    <Compile Include="DefineClass\RecPresetItem.cs" />
     <Compile Include="DefineClass\ReserveViewItem.cs" />
     <Compile Include="Common\TaskTrayClass.cs" />
     <Compile Include="EpgView\WeekDayView.xaml.cs">
@@ -174,8 +227,8 @@
     <Compile Include="EpgView\EpgWeekMainView.xaml.cs">
       <DependentUpon>EpgWeekMainView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Setting\SetDefSearchSettingWindow.xaml.cs">
-      <DependentUpon>SetDefSearchSettingWindow.xaml</DependentUpon>
+    <Compile Include="UserCtrlView\PanelViewBase.cs">
+      <SubType>Code</SubType>
     </Compile>
     <Compile Include="UserCtrlView\RecFolderWindow.xaml.cs">
       <DependentUpon>RecFolderWindow.xaml</DependentUpon>
@@ -183,8 +236,8 @@
     <Compile Include="Setting\SetAppView.xaml.cs">
       <DependentUpon>SetAppView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Setting\SetDefRecSettingWindow.xaml.cs">
-      <DependentUpon>SetDefRecSettingWindow.xaml</DependentUpon>
+    <Compile Include="Setting\SetBasicView.xaml.cs">
+      <DependentUpon>SetBasicView.xaml</DependentUpon>
     </Compile>
     <Compile Include="UserCtrlView\RecSettingView.xaml.cs">
       <DependentUpon>RecSettingView.xaml</DependentUpon>
@@ -198,13 +251,28 @@
     <Compile Include="SearchWindow.xaml.cs">
       <DependentUpon>SearchWindow.xaml</DependentUpon>
     </Compile>
-    <Compile Include="SettingWindow.xaml.cs">
+    <Compile Include="Setting\SettingWindow.xaml.cs">
       <DependentUpon>SettingWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Setting\SetEpgView.xaml.cs">
       <DependentUpon>SetEpgView.xaml</DependentUpon>
     </Compile>
     <Compile Include="DefineClass\TunerSelectInfo.cs" />
+    <Compile Include="UserCtrlView\StatusView.xaml.cs">
+      <DependentUpon>StatusView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="InfoSearchWindow.xaml.cs">
+      <DependentUpon>InfoSearchWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UserCtrlView\PresetEditor.xaml.cs">
+      <DependentUpon>PresetEditor.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Setting\SetPicUpCustomWindow.xaml.cs">
+      <DependentUpon>SetPicUpCustomWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UserCtrlView\ListSearchView.xaml.cs">
+      <DependentUpon>ListSearchView.xaml</DependentUpon>
+    </Compile>
     <Page Include="AddManualAutoAddWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -212,6 +280,14 @@
     <Page Include="AutoAddView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="EpgView\TimeMoveView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\BlackoutWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="ConnectWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
@@ -225,11 +301,19 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="UserCtrlView\EpgAutoAddView.xaml">
-      <SubType>Designer</SubType>
+    <Page Include="Menu\SetContextMenuWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
-    <Page Include="UserCtrlView\ManualAutoAddView.xaml">
+    <Page Include="Setting\SetPresetWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="AutoAddListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\ListBoxDragMoverView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -245,7 +329,11 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="SuspendCheckWindow.xaml">
+    <Page Include="EpgView\TimeJumpView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\SuspendCheckWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
@@ -254,10 +342,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="TunerReserveViewCtrl\TunerReserveNameView.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="TunerReserveViewCtrl\TunerReserveTimeView.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
@@ -277,11 +361,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="UserCtrlView\EpgDataViewSetting.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="UserCtrlView\EpgDataViewSettingWindow.xaml">
+    <Page Include="Setting\EpgDataViewSettingWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -333,7 +413,7 @@
     <Compile Include="Common\DBManagerClass.cs" />
     <Compile Include="Common\DefineEnum.cs" />
     <Compile Include="Common\SettingClass.cs" />
-    <Compile Include="DefineClass\ContentKindInfo.cs" />
+    <Compile Include="CtrlCmdDefEx\EpgContentDataEx.cs" />
     <Compile Include="DefineClass\CustomEpgTabInfo.cs" />
     <Compile Include="EpgView\DateView.xaml.cs">
       <DependentUpon>DateView.xaml</DependentUpon>
@@ -358,10 +438,6 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
-    <Page Include="Setting\SetDefSearchSettingWindow.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
     <Page Include="UserCtrlView\RecFolderWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -370,7 +446,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Setting\SetDefRecSettingWindow.xaml">
+    <Page Include="Setting\SetBasicView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -390,7 +466,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="SettingWindow.xaml">
+    <Page Include="Setting\SettingWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -398,32 +474,56 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-  </ItemGroup>
-  <ItemGroup>
+    <Page Include="Style\ReserveListViewStyles.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\StatusView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Style\UiLayoutStyles.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="InfoSearchWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Style\DataListViewStyles.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\PresetEditor.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Compile Include="DefineClass\ProgramViewItem.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
     <None Include="App.manifest" />
     <AppDesigner Include="Properties\" />
+    <Page Include="Setting\SetPicUpCustomWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UserCtrlView\ListSearchView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="Resources\TaskIconBlue.ico" />
-  </ItemGroup>
-  <ItemGroup>
+    <Resource Include="Resources\EpgTimer_Bon_Vista_blue_rev2.ico" />
     <Resource Include="Resources\TaskIconGray.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <Resource Include="Resources\TaskIconGreen.ico" />
-  </ItemGroup>
-  <ItemGroup>
+    <Resource Include="Resources\TaskIconOrange.ico" />
     <Resource Include="Resources\TaskIconRed.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <Resource Include="Resources\key.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <Resource Include="Resources\key_no.ico" />
+    <Resource Include="Resources\drag.cur" />
+    <Resource Include="Resources\109_AllAnnotations_Error_16x16_72.ico" />
+    <Resource Include="Resources\109_AllAnnotations_Warning_16x16_72.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
