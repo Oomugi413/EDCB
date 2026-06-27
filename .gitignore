@@ -41,6 +41,8 @@
 !.gitignore
 !/Document/Patch/*.diff
 !/Document/Patch/*.patch
+/Document/Unix/*
+!/Document/Unix/Makefile
 !/EpgTimerSrv/EpgTimerSrv/*.a
 !/EpgTimerSrv/EpgTimerSrv/*.lib
 !EMPTY
@@ -48,3 +50,5 @@
 Debug/
 Release/
 obj/
+HttpPublic/
+Setting/
