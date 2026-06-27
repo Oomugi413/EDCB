@@ -44,6 +44,10 @@ public:
 		bool retryOtherTuners;
 		bool separateFixedTuners;
 		bool commentAutoAdd;
+		bool syncResAutoAddChange;
+		bool syncResAutoAddDelete;
+		bool syncResAutoAddChgNewRes;
+		bool syncResAutoAddChgKeepRecTag;
 		bool fixNoRecToServiceOnly;
 		bool autoDelRecInfo;
 		DWORD autoDelRecInfoNum;

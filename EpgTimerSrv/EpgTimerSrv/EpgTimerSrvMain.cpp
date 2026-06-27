@@ -6,6 +6,7 @@
 #include "../../Common/SendCtrlCmd.h"
 #include "../../Common/PathUtil.h"
 #include "../../Common/TimeUtil.h"
+#include <set>
 #ifdef _WIN32
 #include "SyoboiCalUtil.h"
 #include "../../Common/IniUtil.h"
@@ -103,6 +104,185 @@ struct MAIN_WINDOW_CONTEXT {
 		, notifyCount(0)
 		, notifyTipActiveTime(LLONG_MAX) {}
 };
+
+struct AUTO_ADD_SYNC_WORK_ITEM {
+	bool epg;
+	DWORD dataID;
+	bool enabled;
+	REC_SETTING_DATA recSetting;
+	wstring title;
+	std::set<DWORD> reserveIDSet;
+};
+
+bool IsAutoAddedReserve(const RESERVE_DATA& data)
+{
+	return data.comment.empty() == false && data.comment.back() != L'$';
+}
+
+bool IsEpgAutoAddEnabled(const EPG_AUTO_ADD_DATA& data)
+{
+	return data.searchInfo.andKey.compare(0, 7, L"^!{999}") != 0;
+}
+
+bool TryParseDisabledManualAutoAdd(const MANUAL_AUTO_ADD_DATA& data, BYTE* dayOfWeekFlag, wstring* title)
+{
+	if( data.title.size() >= 11 && data.title.compare(0, 8, L"^!{999}[") == 0 && data.title[10] == L']' ){
+		WCHAR buff[3] = { data.title[8], data.title[9], 0 };
+		LPWSTR endp;
+		DWORD val = wcstoul(buff, &endp, 16);
+		if( endp == buff + 2 ){
+			if( dayOfWeekFlag ){
+				*dayOfWeekFlag = (BYTE)val;
+			}
+			if( title ){
+				*title = data.title.substr(11);
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+bool IsManualAutoAddEnabled(const MANUAL_AUTO_ADD_DATA& data)
+{
+	return data.dayOfWeekFlag != 0;
+}
+
+BYTE GetManualAutoAddEffectiveDayOfWeekFlag(const MANUAL_AUTO_ADD_DATA& data)
+{
+	BYTE dayOfWeekFlag = data.dayOfWeekFlag;
+	if( dayOfWeekFlag == 0 ){
+		TryParseDisabledManualAutoAdd(data, &dayOfWeekFlag, NULL);
+	}
+	return dayOfWeekFlag;
+}
+
+wstring GetManualAutoAddEffectiveTitle(const MANUAL_AUTO_ADD_DATA& data)
+{
+	wstring title;
+	return TryParseDisabledManualAutoAdd(data, NULL, &title) ? title : data.title;
+}
+
+ULONGLONG CreateAutoAddSyncPgUID(WORD onid, WORD tsid, WORD sid, WORD eid, SYSTEMTIME startTime)
+{
+	return Create64PgKey(onid, tsid, sid, eid) + ((ULONGLONG)ConvertI64Time(startTime) & 0xFFFFFF0000000000ULL);
+}
+
+void SetRecModeNoRec(REC_SETTING_DATA& recSetting)
+{
+	recSetting.recMode = REC_SETTING_DATA::DIV_RECMODE +
+		(recSetting.GetRecMode() + REC_SETTING_DATA::DIV_RECMODE - 1) % REC_SETTING_DATA::DIV_RECMODE;
+}
+
+void KeepPackedRecTag(REC_SETTING_DATA& dst, const REC_SETTING_DATA& src)
+{
+	size_t oldPos = src.batFilePath.find(L'*');
+	wstring tag = oldPos == wstring::npos ? L"" : src.batFilePath.substr(oldPos + 1);
+	size_t newPos = dst.batFilePath.find(L'*');
+	dst.batFilePath = newPos == wstring::npos ? dst.batFilePath : dst.batFilePath.substr(0, newPos);
+	if( tag.empty() == false ){
+		dst.batFilePath += L'*';
+		dst.batFilePath += tag;
+	}
+}
+
+void EnumEpgAutoAddReserveIDs(const CEpgDBManager& epgDB, const EPG_AUTO_ADD_DATA& data,
+                              const vector<RESERVE_DATA>& reserveList, bool separateFixedTuners, std::set<DWORD>& reserveIDSet)
+{
+	EPGDB_SEARCH_KEY_INFO key = data.searchInfo;
+	if( key.andKey.compare(0, 7, L"^!{999}") == 0 ){
+		key.andKey.erase(0, 7);
+	}
+
+	std::set<ULONGLONG> pgUIDSet;
+	epgDB.SearchEpg(&key, 1, 0, LLONG_MAX, NULL, [&pgUIDSet](const EPGDB_EVENT_INFO* val, wstring*) {
+		if( val && val->StartTimeFlag && val->DurationFlag ){
+			pgUIDSet.insert(CreateAutoAddSyncPgUID(val->original_network_id, val->transport_stream_id,
+			                                       val->service_id, val->event_id, val->start_time));
+		}
+	});
+
+	for( const RESERVE_DATA& reserve : reserveList ){
+		if( reserve.eventID != 0xFFFF &&
+		    (separateFixedTuners == false || reserve.recSetting.tunerID == data.recSetting.tunerID) &&
+		    pgUIDSet.find(CreateAutoAddSyncPgUID(reserve.originalNetworkID, reserve.transportStreamID,
+		                                        reserve.serviceID, reserve.eventID, reserve.startTime)) != pgUIDSet.end() ){
+			reserveIDSet.insert(reserve.reserveID);
+		}
+	}
+}
+
+void EnumManualAutoAddReserveIDs(const MANUAL_AUTO_ADD_DATA& data,
+                                 const vector<RESERVE_DATA>& reserveList, bool separateFixedTuners, std::set<DWORD>& reserveIDSet)
+{
+	BYTE dayOfWeekFlag = GetManualAutoAddEffectiveDayOfWeekFlag(data);
+	if( dayOfWeekFlag == 0 ){
+		return;
+	}
+	for( const RESERVE_DATA& reserve : reserveList ){
+		if( reserve.eventID == 0xFFFF &&
+		    reserve.originalNetworkID == data.originalNetworkID &&
+		    reserve.transportStreamID == data.transportStreamID &&
+		    reserve.serviceID == data.serviceID &&
+		    reserve.durationSecond == data.durationSecond &&
+		    (separateFixedTuners == false || reserve.recSetting.tunerID == data.recSetting.tunerID) ){
+			if( (dayOfWeekFlag >> reserve.startTime.wDayOfWeek & 1) != 0 ){
+				int startTime = reserve.startTime.wHour * 60 * 60 + reserve.startTime.wMinute * 60 + reserve.startTime.wSecond;
+				if( startTime == data.startTime ){
+					reserveIDSet.insert(reserve.reserveID);
+				}
+			}
+		}
+	}
+}
+
+void AddEnabledAutoAddReserveMap(map<DWORD, vector<pair<bool, DWORD>>>& enabledMap, bool epg, DWORD dataID,
+                                 const std::set<DWORD>& reserveIDSet)
+{
+	for( DWORD id : reserveIDSet ){
+		enabledMap[id].emplace_back(epg, dataID);
+	}
+}
+
+void BuildEnabledAutoAddReserveMap(const CEpgDBManager& epgDB,
+                                   const map<DWORD, EPG_AUTO_ADD_DATA>& epgMap,
+                                   const map<DWORD, MANUAL_AUTO_ADD_DATA>& manualMap,
+                                   const vector<RESERVE_DATA>& reserveList,
+                                   bool separateFixedTuners,
+                                   map<DWORD, vector<pair<bool, DWORD>>>& enabledMap)
+{
+	for( const auto& item : epgMap ){
+		if( IsEpgAutoAddEnabled(item.second) ){
+			std::set<DWORD> reserveIDSet;
+			EnumEpgAutoAddReserveIDs(epgDB, item.second, reserveList, separateFixedTuners, reserveIDSet);
+			AddEnabledAutoAddReserveMap(enabledMap, true, item.first, reserveIDSet);
+		}
+	}
+	for( const auto& item : manualMap ){
+		if( IsManualAutoAddEnabled(item.second) ){
+			std::set<DWORD> reserveIDSet;
+			EnumManualAutoAddReserveIDs(item.second, reserveList, separateFixedTuners, reserveIDSet);
+			AddEnabledAutoAddReserveMap(enabledMap, false, item.first, reserveIDSet);
+		}
+	}
+}
+
+bool HasEnabledAutoAddAfterRemove(const map<DWORD, vector<pair<bool, DWORD>>>& enabledMap,
+                                  DWORD reserveID,
+                                  const std::set<DWORD>& removeEpgIDSet,
+                                  const std::set<DWORD>& removeManualIDSet)
+{
+	auto itr = enabledMap.find(reserveID);
+	if( itr != enabledMap.end() ){
+		for( const auto& item : itr->second ){
+			if( item.first ? removeEpgIDSet.find(item.second) == removeEpgIDSet.end() :
+			                 removeManualIDSet.find(item.second) == removeManualIDSet.end() ){
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 void CtrlCmdResponseThreadCallback(const CCmdStream& cmd, CCmdStream& res, CTCPServer::RESPONSE_THREAD_STATE state, void*& param)
 {
@@ -1431,6 +1611,190 @@ vector<RESERVE_DATA>& CEpgTimerSrvMain::PreChgReserveData(vector<RESERVE_DATA>& 
 	return reserveList;
 }
 
+bool CEpgTimerSrvMain::SyncChangeAutoAddReserveData(const vector<EPG_AUTO_ADD_DATA>& epgList, const vector<MANUAL_AUTO_ADD_DATA>& manualList)
+{
+	bool syncChange;
+	bool syncChgNewRes;
+	bool syncChgKeepRecTag;
+	bool separateFixedTuners;
+	{
+		lock_recursive_mutex lock(this->settingLock);
+		syncChange = this->setting.syncResAutoAddChange;
+		syncChgNewRes = this->setting.syncResAutoAddChgNewRes;
+		syncChgKeepRecTag = this->setting.syncResAutoAddChgKeepRecTag;
+		separateFixedTuners = this->setting.separateFixedTuners;
+	}
+	if( syncChange == false ){
+		return true;
+	}
+
+	vector<RESERVE_DATA> reserveList = this->reserveManager.GetReserveDataAll();
+	map<DWORD, RESERVE_DATA> reserveMap;
+	for( const RESERVE_DATA& item : reserveList ){
+		reserveMap[item.reserveID] = item;
+	}
+
+	vector<AUTO_ADD_SYNC_WORK_ITEM> workList;
+	std::set<DWORD> targetEpgIDSet;
+	std::set<DWORD> targetManualIDSet;
+	for( const EPG_AUTO_ADD_DATA& item : epgList ){
+		auto itr = this->epgAutoAdd.GetMap().find(item.dataID);
+		if( item.dataID != 0 && itr != this->epgAutoAdd.GetMap().end() ){
+			targetEpgIDSet.insert(item.dataID);
+			workList.emplace_back();
+			AUTO_ADD_SYNC_WORK_ITEM& work = workList.back();
+			work.epg = true;
+			work.dataID = item.dataID;
+			work.enabled = IsEpgAutoAddEnabled(item);
+			work.recSetting = item.recSetting;
+			EnumEpgAutoAddReserveIDs(this->epgDB, itr->second, reserveList, separateFixedTuners, work.reserveIDSet);
+		}
+	}
+	for( const MANUAL_AUTO_ADD_DATA& item : manualList ){
+		auto itr = this->manualAutoAdd.GetMap().find(item.dataID);
+		if( item.dataID != 0 && itr != this->manualAutoAdd.GetMap().end() ){
+			targetManualIDSet.insert(item.dataID);
+			workList.emplace_back();
+			AUTO_ADD_SYNC_WORK_ITEM& work = workList.back();
+			work.epg = false;
+			work.dataID = item.dataID;
+			work.enabled = IsManualAutoAddEnabled(item);
+			work.recSetting = item.recSetting;
+			work.title = GetManualAutoAddEffectiveTitle(item);
+			EnumManualAutoAddReserveIDs(itr->second, reserveList, separateFixedTuners, work.reserveIDSet);
+		}
+	}
+	if( workList.empty() ){
+		return true;
+	}
+
+	map<DWORD, vector<pair<bool, DWORD>>> enabledMap;
+	BuildEnabledAutoAddReserveMap(this->epgDB, this->epgAutoAdd.GetMap(), this->manualAutoAdd.GetMap(),
+	                              reserveList, separateFixedTuners, enabledMap);
+
+	map<DWORD, RESERVE_DATA> chgMap;
+	std::set<DWORD> enabledReserveIDSet;
+	std::set<DWORD> disabledReserveIDSet;
+	for( const AUTO_ADD_SYNC_WORK_ITEM& work : workList ){
+		for( DWORD reserveID : work.reserveIDSet ){
+			auto itrReserve = reserveMap.find(reserveID);
+			if( itrReserve == reserveMap.end() || IsAutoAddedReserve(itrReserve->second) == false ){
+				continue;
+			}
+			if( work.enabled ){
+				enabledReserveIDSet.insert(reserveID);
+			}else{
+				disabledReserveIDSet.insert(reserveID);
+			}
+			if( chgMap.find(reserveID) == chgMap.end() ){
+				RESERVE_DATA reserve = itrReserve->second;
+				reserve.recSetting = work.recSetting;
+				if( itrReserve->second.recSetting.IsNoRec() ){
+					SetRecModeNoRec(reserve.recSetting);
+				}
+				if( work.epg == false && reserve.eventID == 0xFFFF ){
+					reserve.title = work.title;
+				}
+				if( syncChgKeepRecTag && syncChgNewRes == false ){
+					KeepPackedRecTag(reserve.recSetting, itrReserve->second.recSetting);
+				}
+				chgMap[reserveID] = reserve;
+			}
+		}
+	}
+
+	for( DWORD reserveID : disabledReserveIDSet ){
+		if( enabledReserveIDSet.find(reserveID) == enabledReserveIDSet.end() ){
+			chgMap.erase(reserveID);
+		}
+	}
+
+	if( syncChgNewRes ){
+		vector<DWORD> delReserveList;
+		LONGLONG protectTime = GetNowI64Time() + 60 * I64_1SEC;
+		for( auto itr = chgMap.begin(); itr != chgMap.end(); ){
+			auto itrReserve = reserveMap.find(itr->first);
+			if( itrReserve != reserveMap.end() &&
+			    itrReserve->second.recSetting.IsNoRec() == false &&
+			    ConvertI64Time(itrReserve->second.startTime) > protectTime &&
+			    HasEnabledAutoAddAfterRemove(enabledMap, itr->first, targetEpgIDSet, targetManualIDSet) == false ){
+				delReserveList.push_back(itr->first);
+				itr = chgMap.erase(itr);
+			}else{
+				++itr;
+			}
+		}
+		if( delReserveList.empty() == false ){
+			this->reserveManager.DelReserveData(delReserveList);
+		}
+	}
+
+	vector<RESERVE_DATA> chgReserveList;
+	chgReserveList.reserve(chgMap.size());
+	for( const auto& item : chgMap ){
+		chgReserveList.push_back(item.second);
+	}
+	return chgReserveList.empty() || this->reserveManager.ChgReserveData(this->PreChgReserveData(chgReserveList));
+}
+
+void CEpgTimerSrvMain::SyncDeleteAutoAddReserveData(const vector<DWORD>& epgIDList, const vector<DWORD>& manualIDList)
+{
+	bool syncDelete;
+	bool separateFixedTuners;
+	{
+		lock_recursive_mutex lock(this->settingLock);
+		syncDelete = this->setting.syncResAutoAddDelete;
+		separateFixedTuners = this->setting.separateFixedTuners;
+	}
+	if( syncDelete == false ){
+		return;
+	}
+
+	vector<RESERVE_DATA> reserveList = this->reserveManager.GetReserveDataAll();
+	map<DWORD, RESERVE_DATA> reserveMap;
+	for( const RESERVE_DATA& item : reserveList ){
+		reserveMap[item.reserveID] = item;
+	}
+
+	std::set<DWORD> targetEpgIDSet;
+	std::set<DWORD> targetManualIDSet;
+	std::set<DWORD> targetReserveIDSet;
+	for( DWORD id : epgIDList ){
+		auto itr = this->epgAutoAdd.GetMap().find(id);
+		if( itr != this->epgAutoAdd.GetMap().end() ){
+			targetEpgIDSet.insert(id);
+			EnumEpgAutoAddReserveIDs(this->epgDB, itr->second, reserveList, separateFixedTuners, targetReserveIDSet);
+		}
+	}
+	for( DWORD id : manualIDList ){
+		auto itr = this->manualAutoAdd.GetMap().find(id);
+		if( itr != this->manualAutoAdd.GetMap().end() ){
+			targetManualIDSet.insert(id);
+			EnumManualAutoAddReserveIDs(itr->second, reserveList, separateFixedTuners, targetReserveIDSet);
+		}
+	}
+	if( targetReserveIDSet.empty() ){
+		return;
+	}
+
+	map<DWORD, vector<pair<bool, DWORD>>> enabledMap;
+	BuildEnabledAutoAddReserveMap(this->epgDB, this->epgAutoAdd.GetMap(), this->manualAutoAdd.GetMap(),
+	                              reserveList, separateFixedTuners, enabledMap);
+
+	vector<DWORD> delReserveList;
+	for( DWORD reserveID : targetReserveIDSet ){
+		auto itrReserve = reserveMap.find(reserveID);
+		if( itrReserve != reserveMap.end() &&
+		    IsAutoAddedReserve(itrReserve->second) &&
+		    HasEnabledAutoAddAfterRemove(enabledMap, reserveID, targetEpgIDSet, targetManualIDSet) == false ){
+			delReserveList.push_back(reserveID);
+		}
+	}
+	if( delReserveList.empty() == false ){
+		this->reserveManager.DelReserveData(delReserveList);
+	}
+}
+
 void CEpgTimerSrvMain::AutoAddReserveEPG(const EPG_AUTO_ADD_DATA& data, vector<RESERVE_DATA>& setList)
 {
 	int autoAddHour;
@@ -1886,6 +2250,7 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 			vector<DWORD> val;
 			if( cmd.ReadVALUE(&val) ){
 				lock_recursive_mutex lock(sys->autoAddLock);
+				sys->SyncDeleteAutoAddReserveData(val, vector<DWORD>());
 				for( DWORD id : val ){
 					if( sys->epgAutoAdd.DelData(id) ){
 						sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
@@ -1906,16 +2271,20 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 					vector<RESERVE_DATA> addList;
 					for( EPG_AUTO_ADD_DATA& item : val ){
 						sys->AdjustRecModeRange(item.recSetting);
-						if( sys->epgAutoAdd.ChgData(item) ){
-							sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
-							sys->AutoAddReserveEPG(item, addList);
-						}
 					}
-					sys->epgAutoAdd.SaveText();
-					sys->reserveManager.AddReserveData(addList);
+					if( sys->SyncChangeAutoAddReserveData(val, vector<MANUAL_AUTO_ADD_DATA>()) ){
+						for( EPG_AUTO_ADD_DATA& item : val ){
+							if( sys->epgAutoAdd.ChgData(item) ){
+								sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
+								sys->AutoAddReserveEPG(item, addList);
+							}
+						}
+						sys->epgAutoAdd.SaveText();
+						sys->reserveManager.AddReserveData(addList);
+						sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
+						res.SetParam(CMD_SUCCESS);
+					}
 				}
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
-				res.SetParam(CMD_SUCCESS);
 			}
 		}
 		break;
@@ -1958,6 +2327,7 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 			vector<DWORD> val;
 			if( cmd.ReadVALUE(&val) ){
 				lock_recursive_mutex lock(sys->autoAddLock);
+				sys->SyncDeleteAutoAddReserveData(vector<DWORD>(), val);
 				for( DWORD id : val ){
 					sys->manualAutoAdd.DelData(id);
 				}
@@ -1976,15 +2346,19 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 					vector<RESERVE_DATA> addList;
 					for( MANUAL_AUTO_ADD_DATA& item : val ){
 						sys->AdjustRecModeRange(item.recSetting);
-						if( sys->manualAutoAdd.ChgData(item) ){
-							sys->AutoAddReserveProgram(item, addList);
-						}
 					}
-					sys->manualAutoAdd.SaveText();
-					sys->reserveManager.AddReserveData(addList);
+					if( sys->SyncChangeAutoAddReserveData(vector<EPG_AUTO_ADD_DATA>(), val) ){
+						for( MANUAL_AUTO_ADD_DATA& item : val ){
+							if( sys->manualAutoAdd.ChgData(item) ){
+								sys->AutoAddReserveProgram(item, addList);
+							}
+						}
+						sys->manualAutoAdd.SaveText();
+						sys->reserveManager.AddReserveData(addList);
+						sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_MANUAL);
+						res.SetParam(CMD_SUCCESS);
+					}
 				}
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_MANUAL);
-				res.SetParam(CMD_SUCCESS);
 			}
 		}
 		break;
@@ -2536,30 +2910,34 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 		}
 		break;
 	case CMD2_EPG_SRV_CHG_AUTO_ADD2:
-		{
-			AddDebugLog(L"CMD2_EPG_SRV_CHG_AUTO_ADD2");
-			WORD ver;
-			vector<EPG_AUTO_ADD_DATA> val;
-			if( cmd.ReadVALUE2WithVersion(&ver, &val) ){
-				{
-					lock_recursive_mutex lock(sys->autoAddLock);
-					vector<RESERVE_DATA> addList;
-					for( EPG_AUTO_ADD_DATA& item : val ){
-						sys->AdjustRecModeRange(item.recSetting);
-						if( sys->epgAutoAdd.ChgData(item) ){
-							sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
-							sys->AutoAddReserveEPG(item, addList);
+			{
+				AddDebugLog(L"CMD2_EPG_SRV_CHG_AUTO_ADD2");
+				WORD ver;
+				vector<EPG_AUTO_ADD_DATA> val;
+				if( cmd.ReadVALUE2WithVersion(&ver, &val) ){
+					{
+						lock_recursive_mutex lock(sys->autoAddLock);
+						vector<RESERVE_DATA> addList;
+						for( EPG_AUTO_ADD_DATA& item : val ){
+							sys->AdjustRecModeRange(item.recSetting);
+						}
+						if( sys->SyncChangeAutoAddReserveData(val, vector<MANUAL_AUTO_ADD_DATA>()) ){
+							for( EPG_AUTO_ADD_DATA& item : val ){
+								if( sys->epgAutoAdd.ChgData(item) ){
+									sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
+									sys->AutoAddReserveEPG(item, addList);
+								}
+							}
+							sys->epgAutoAdd.SaveText();
+							sys->reserveManager.AddReserveData(addList);
+							sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
+							res.WriteVALUE(ver);
+							res.SetParam(CMD_SUCCESS);
 						}
 					}
-					sys->epgAutoAdd.SaveText();
-					sys->reserveManager.AddReserveData(addList);
 				}
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
-				res.WriteVALUE(ver);
-				res.SetParam(CMD_SUCCESS);
 			}
-		}
-		break;
+			break;
 	case CMD2_EPG_SRV_ENUM_MANU_ADD2:
 		{
 			AddDebugLog(L"CMD2_EPG_SRV_ENUM_MANU_ADD2");
@@ -2601,29 +2979,33 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 		}
 		break;
 	case CMD2_EPG_SRV_CHG_MANU_ADD2:
-		{
-			AddDebugLog(L"CMD2_EPG_SRV_CHG_MANU_ADD2");
-			WORD ver;
-			vector<MANUAL_AUTO_ADD_DATA> val;
-			if( cmd.ReadVALUE2WithVersion(&ver, &val) ){
-				{
-					lock_recursive_mutex lock(sys->autoAddLock);
-					vector<RESERVE_DATA> addList;
-					for( MANUAL_AUTO_ADD_DATA& item : val ){
-						sys->AdjustRecModeRange(item.recSetting);
-						if( sys->manualAutoAdd.ChgData(item) ){
-							sys->AutoAddReserveProgram(item, addList);
+			{
+				AddDebugLog(L"CMD2_EPG_SRV_CHG_MANU_ADD2");
+				WORD ver;
+				vector<MANUAL_AUTO_ADD_DATA> val;
+				if( cmd.ReadVALUE2WithVersion(&ver, &val) ){
+					{
+						lock_recursive_mutex lock(sys->autoAddLock);
+						vector<RESERVE_DATA> addList;
+						for( MANUAL_AUTO_ADD_DATA& item : val ){
+							sys->AdjustRecModeRange(item.recSetting);
+						}
+						if( sys->SyncChangeAutoAddReserveData(vector<EPG_AUTO_ADD_DATA>(), val) ){
+							for( MANUAL_AUTO_ADD_DATA& item : val ){
+								if( sys->manualAutoAdd.ChgData(item) ){
+									sys->AutoAddReserveProgram(item, addList);
+								}
+							}
+							sys->manualAutoAdd.SaveText();
+							sys->reserveManager.AddReserveData(addList);
+							sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_MANUAL);
+							res.WriteVALUE(ver);
+							res.SetParam(CMD_SUCCESS);
 						}
 					}
-					sys->manualAutoAdd.SaveText();
-					sys->reserveManager.AddReserveData(addList);
 				}
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_MANUAL);
-				res.WriteVALUE(ver);
-				res.SetParam(CMD_SUCCESS);
 			}
-		}
-		break;
+			break;
 	case CMD2_EPG_SRV_ENUM_RECINFO2:
 	case CMD2_EPG_SRV_ENUM_RECINFO_BASIC2:
 		{
@@ -2742,41 +3124,46 @@ void CEpgTimerSrvMain::CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& 
 		}
 		break;
 	case CMD_EPG_SRV_DEL_AUTO_ADD:
-		{
-			res.SetParam(OLD_CMD_ERR);
-			EPG_AUTO_ADD_DATA item;
-			if( DeprecatedReadVALUE(&item, cmd.GetData(), cmd.GetDataSize()) ){
-				lock_recursive_mutex lock(sys->autoAddLock);
-				if( sys->epgAutoAdd.DelData(item.dataID) ){
-					sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
-				}
-				sys->epgAutoAdd.SaveText();
-				res.SetParam(OLD_CMD_SUCCESS);
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
-			}
-		}
-		break;
-	case CMD_EPG_SRV_CHG_AUTO_ADD:
-		{
-			res.SetParam(OLD_CMD_ERR);
-			EPG_AUTO_ADD_DATA item;
-			if( DeprecatedReadVALUE(&item, cmd.GetData(), cmd.GetDataSize()) ){
-				{
+			{
+				res.SetParam(OLD_CMD_ERR);
+				EPG_AUTO_ADD_DATA item;
+				if( DeprecatedReadVALUE(&item, cmd.GetData(), cmd.GetDataSize()) ){
 					lock_recursive_mutex lock(sys->autoAddLock);
-					vector<RESERVE_DATA> addList;
-					sys->AdjustRecModeRange(item.recSetting);
-					if( sys->epgAutoAdd.ChgData(item) ){
+					sys->SyncDeleteAutoAddReserveData(vector<DWORD>(1, item.dataID), vector<DWORD>());
+					if( sys->epgAutoAdd.DelData(item.dataID) ){
 						sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
-						sys->AutoAddReserveEPG(item, addList);
 					}
 					sys->epgAutoAdd.SaveText();
-					sys->reserveManager.AddReserveData(addList);
+					res.SetParam(OLD_CMD_SUCCESS);
+					sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
 				}
-				res.SetParam(OLD_CMD_SUCCESS);
-				sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
 			}
-		}
-		break;
+			break;
+	case CMD_EPG_SRV_CHG_AUTO_ADD:
+		{
+				res.SetParam(OLD_CMD_ERR);
+				EPG_AUTO_ADD_DATA item;
+				if( DeprecatedReadVALUE(&item, cmd.GetData(), cmd.GetDataSize()) ){
+					{
+						lock_recursive_mutex lock(sys->autoAddLock);
+						vector<RESERVE_DATA> addList;
+						sys->AdjustRecModeRange(item.recSetting);
+						if( sys->SyncChangeAutoAddReserveData(vector<EPG_AUTO_ADD_DATA>(1, item), vector<MANUAL_AUTO_ADD_DATA>()) ){
+							if( sys->epgAutoAdd.ChgData(item) ){
+								sys->autoAddCheckItr = sys->epgAutoAdd.GetMap().begin();
+								sys->AutoAddReserveEPG(item, addList);
+							}
+							sys->epgAutoAdd.SaveText();
+							sys->reserveManager.AddReserveData(addList);
+							res.SetParam(OLD_CMD_SUCCESS);
+						}
+					}
+					if( res.GetParam() == OLD_CMD_SUCCESS ){
+						sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
+					}
+				}
+			}
+			break;
 	case CMD_EPG_SRV_SEARCH_PG_FIRST:
 		{
 			res.SetParam(OLD_CMD_ERR);
@@ -4195,7 +4582,9 @@ int CEpgTimerSrvMain::LuaDelAutoAdd(lua_State* L)
 	CLuaWorkspace ws(L);
 	if( lua_gettop(L) == 1 ){
 		lock_recursive_mutex lock(ws.sys->autoAddLock);
-		if( ws.sys->epgAutoAdd.DelData((DWORD)lua_tointeger(L, -1)) ){
+		DWORD id = (DWORD)lua_tointeger(L, -1);
+		ws.sys->SyncDeleteAutoAddReserveData(vector<DWORD>(1, id), vector<DWORD>());
+		if( ws.sys->epgAutoAdd.DelData(id) ){
 			ws.sys->autoAddCheckItr = ws.sys->epgAutoAdd.GetMap().begin();
 			ws.sys->epgAutoAdd.SaveText();
 			ws.sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_EPG);
@@ -4209,7 +4598,9 @@ int CEpgTimerSrvMain::LuaDelManuAdd(lua_State* L)
 	CLuaWorkspace ws(L);
 	if( lua_gettop(L) == 1 ){
 		lock_recursive_mutex lock(ws.sys->autoAddLock);
-		if( ws.sys->manualAutoAdd.DelData((DWORD)lua_tointeger(L, -1)) ){
+		DWORD id = (DWORD)lua_tointeger(L, -1);
+		ws.sys->SyncDeleteAutoAddReserveData(vector<DWORD>(), vector<DWORD>(1, id));
+		if( ws.sys->manualAutoAdd.DelData(id) ){
 			ws.sys->manualAutoAdd.SaveText();
 			ws.sys->notifyManager.AddNotify(NOTIFY_UPDATE_AUTOADD_MANUAL);
 		}
@@ -4230,19 +4621,20 @@ int CEpgTimerSrvMain::LuaAddOrChgAutoAdd(lua_State* L)
 			if( lua_istable(L, -1) ){
 				FetchRecSettingData(ws, item.recSetting);
 				bool modified = true;
-				{
-					lock_recursive_mutex lock(ws.sys->autoAddLock);
-					ws.sys->AdjustRecModeRange(item.recSetting);
-					if( item.dataID == 0 ){
-						item.dataID = ws.sys->epgAutoAdd.AddData(item);
-					}else{
-						modified = ws.sys->epgAutoAdd.ChgData(item);
-					}
-					if( modified ){
-						ws.sys->autoAddCheckItr = ws.sys->epgAutoAdd.GetMap().begin();
-						vector<RESERVE_DATA> addList;
-						ws.sys->AutoAddReserveEPG(item, addList);
-						ws.sys->epgAutoAdd.SaveText();
+					{
+						lock_recursive_mutex lock(ws.sys->autoAddLock);
+						ws.sys->AdjustRecModeRange(item.recSetting);
+						if( item.dataID == 0 ){
+							item.dataID = ws.sys->epgAutoAdd.AddData(item);
+						}else{
+							modified = ws.sys->SyncChangeAutoAddReserveData(vector<EPG_AUTO_ADD_DATA>(1, item), vector<MANUAL_AUTO_ADD_DATA>()) &&
+							           ws.sys->epgAutoAdd.ChgData(item);
+						}
+						if( modified ){
+							ws.sys->autoAddCheckItr = ws.sys->epgAutoAdd.GetMap().begin();
+							vector<RESERVE_DATA> addList;
+							ws.sys->AutoAddReserveEPG(item, addList);
+							ws.sys->epgAutoAdd.SaveText();
 						ws.sys->reserveManager.AddReserveData(addList);
 					}
 				}
@@ -4276,19 +4668,20 @@ int CEpgTimerSrvMain::LuaAddOrChgManuAdd(lua_State* L)
 		if( lua_istable(L, -1) ){
 			FetchRecSettingData(ws, item.recSetting);
 			bool modified = true;
-			{
-				lock_recursive_mutex lock(ws.sys->autoAddLock);
-				ws.sys->AdjustRecModeRange(item.recSetting);
-				if( item.dataID == 0 ){
-					item.dataID = ws.sys->manualAutoAdd.AddData(item);
-				}else{
-					modified = ws.sys->manualAutoAdd.ChgData(item);
-				}
-				if( modified ){
-					vector<RESERVE_DATA> addList;
-					ws.sys->AutoAddReserveProgram(item, addList);
-					ws.sys->manualAutoAdd.SaveText();
-					ws.sys->reserveManager.AddReserveData(addList);
+				{
+					lock_recursive_mutex lock(ws.sys->autoAddLock);
+					ws.sys->AdjustRecModeRange(item.recSetting);
+					if( item.dataID == 0 ){
+						item.dataID = ws.sys->manualAutoAdd.AddData(item);
+					}else{
+						modified = ws.sys->SyncChangeAutoAddReserveData(vector<EPG_AUTO_ADD_DATA>(), vector<MANUAL_AUTO_ADD_DATA>(1, item)) &&
+						           ws.sys->manualAutoAdd.ChgData(item);
+					}
+					if( modified ){
+						vector<RESERVE_DATA> addList;
+						ws.sys->AutoAddReserveProgram(item, addList);
+						ws.sys->manualAutoAdd.SaveText();
+						ws.sys->reserveManager.AddReserveData(addList);
 				}
 			}
 			if( modified ){
