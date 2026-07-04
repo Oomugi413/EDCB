@@ -1,483 +1,204 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.Windows.Threading;
-
-using EpgTimer.TunerReserveViewCtrl;
 
 namespace EpgTimer
 {
+    using TunerReserveViewCtrl;
+
     /// <summary>
     /// TunerReserveMainView.xaml の相互作用ロジック
     /// </summary>
-    public partial class TunerReserveMainView : UserControl
+    public partial class TunerReserveMainView : DataItemViewBase
     {
-        private List<ReserveViewItem> reserveList = new List<ReserveViewItem>();
-        private bool updateReserveData = true;
+        private List<TunerReserveViewItem> reserveList = new List<TunerReserveViewItem>();
+        private Point clickPos;
 
+        private CmdExeReserve mc; //予約系コマンド集
+        private ContextMenu cmdMenu = new ContextMenuEx() { Tag = -1 };//tunerReserveView.Contextmenu使うとフォーカスおかしくなる‥。
 
         public TunerReserveMainView()
         {
             InitializeComponent();
-        }
 
-        /// <summary>
-        /// 保持情報のクリア
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        public bool ClearInfo()
+            tunerReserveView.ScrollChanged += new ScrollChangedEventHandler(tunerReserveView_ScrollChanged);
+            tunerReserveView.LeftDoubleClick += (sender, cursorPos) => EpgCmds.ShowDialog.Execute(null, cmdMenu);
+            tunerReserveView.MouseClick += (sender, cursorPos) => clickPos = cursorPos;
+            tunerReserveView.RightClick += new TunerReserveView.PanelViewClickHandler(tunerReserveView_RightClick);
+            button_now.Click += (sender, e) => tunerReserveView.scrollViewer.ScrollToVerticalOffset(0);
+
+            //ビューコードの登録
+            mBinds.View = CtxmCode.TunerReserveView;
+
+            //最初にコマンド集の初期化
+            mc = new CmdExeReserve(this);
+            mc.SetFuncGetDataList(isAll => isAll == true ? reserveList.GetDataList() : reserveList.GetHitDataList(clickPos));
+
+            //コマンド集からコマンドを登録
+            mc.ResetCommandBindings(this, cmdMenu);
+
+            //予約をたどるショートカットの登録。こちらはコマンドで問題無いが、番組表側と揃えておく。
+            this.PreviewKeyDown += (sender, e) => ViewUtil.OnKeyMoveNextReserve(sender, e, this);
+        }
+        public void RefreshMenu()
         {
-            tunerReserveView.ClearInfo();
-            tunerReserveTimeView.ClearInfo();
-            tunerReserveNameView.ClearInfo();
-            reserveList.Clear();
-
-            return true;
+            mc.EpgInfoOpenMode = Settings.Instance.TunerEpgInfoOpenMode;
+            mBinds.ResetInputBindings(this, tunerReserveView.scrollViewer);
+            mBinds.ResetInputBindings(tunerReserveTimeView.scrollViewer, tunerReserveNameView.scrollViewer);
+            mm.CtxmGenerateContextMenu(cmdMenu, CtxmCode.TunerReserveView, false);
+        }
+        public void RefreshView()
+        {
+            tunerReserveView.reserveViewPanel.Background = Settings.BrushCache.TunerBackColor;
+            tunerReserveTimeView.Background = Settings.BrushCache.TunerTimeBorderColor;
+            tunerReserveNameView.Background = Settings.BrushCache.TunerNameBorderColor;
         }
 
-        /// <summary>
-        /// 表示スクロールイベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
+        /// <summary>表示スクロールイベント呼び出し</summary>
         void tunerReserveView_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
-            {
-                {
-                    //時間軸の表示もスクロール
-                    tunerReserveTimeView.scrollViewer.ScrollToVerticalOffset(tunerReserveView.scrollViewer.VerticalOffset);
-                    //サービス名表示もスクロール
-                    tunerReserveNameView.scrollViewer.ScrollToHorizontalOffset(tunerReserveView.scrollViewer.HorizontalOffset);
-                }
-            }
+            tunerReserveView.view_ScrollChanged(tunerReserveView.scrollViewer, tunerReserveTimeView.scrollViewer, tunerReserveNameView.scrollViewer);
         }
 
-        /// <summary>
-        /// マウス位置から予約情報を取得する
-        /// </summary>
-        /// <param name="cursorPos">[IN]マウス位置</param>
-        /// <returns>nullで存在しない</returns>
-        private ReserveData GetReserveItem(Point cursorPos)
+        /// <summary>右ボタンクリック</summary>
+        protected void sub_erea_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
-            foreach (ReserveViewItem resInfo in reserveList)
-            {
-                if (resInfo.LeftPos <= cursorPos.X && cursorPos.X < resInfo.LeftPos + resInfo.Width &&
-                    resInfo.TopPos <= cursorPos.Y && cursorPos.Y < resInfo.TopPos + resInfo.Height)
-                {
-                    return resInfo.ReserveInfo;
-                }
-            }
-            return null;
+            tunerReserveView_RightClick(sender, new Point(-1, -1));
         }
-
-        /// <summary>
-        /// 左ボタンダブルクリックイベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="cursorPos"></param>
-        void tunerReserveView_LeftDoubleClick(object sender, Point cursorPos)
+        void tunerReserveView_RightClick(object sender, Point cursorPos)
         {
-            //まず予約情報あるかチェック
-            ReserveData reserve = GetReserveItem(cursorPos);
-            if (reserve != null)
-            {
-                //予約変更ダイアログ表示
-                ChangeReserve(reserve);
-            }
+            //右クリック表示メニューの作成
+            clickPos = cursorPos;
+            mc.SupportContextMenuLoading(cmdMenu, null);
         }
 
-        /// <summary>
-        /// 右クリックメニュー 予約変更クリックイベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_chg_Click(object sender, RoutedEventArgs e)
+        protected override void UpdateStatusData(int mode = 0)
         {
-            var reserve = (ReserveData)((MenuItem)sender).DataContext;
-            ChangeReserve(reserve);
+            this.status[1] = ViewUtil.ConvertReserveStatus(reserveList.GetDataList(), "予約数", 3);
         }
-
-        /// <summary>
-        /// 右クリックメニュー 予約削除クリックイベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_del_Click(object sender, RoutedEventArgs e)
+        protected override bool ReloadInfoData()
         {
-            try
-            {
-                var reserve = (ReserveData)((MenuItem)sender).DataContext;
-                List<uint> list = new List<uint>();
-                list.Add(reserve.ReserveID);
-                ErrCode err = CommonManager.CreateSrvCtrl().SendDelReserve(list);
-                if (err != ErrCode.CMD_SUCCESS)
-                {
-                    MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "予約削除でエラーが発生しました。");
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+            ReloadReserveViewItem();
+            return true;
         }
-
-        /// <summary>
-        /// 右クリックメニュー 有効無効イベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_chg_no_Click(object sender, RoutedEventArgs e)
-        {
-            var reserve = (ReserveData)((MenuItem)sender).DataContext;
-            byte originalRecMode = reserve.RecSetting.RecMode;
-            //録画モード情報を維持して無効化
-            reserve.RecSetting.RecMode = CommonManager.Instance.DB.CombineRecModeAndNoRec(reserve.RecSetting.GetRecMode(), true);
-            string message = null;
-            try
-            {
-                ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(new List<ReserveData>() { reserve });
-                if (err != ErrCode.CMD_SUCCESS)
-                {
-                    message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                }
-            }
-            catch (Exception ex)
-            {
-                message = ex.ToString();
-            }
-            reserve.RecSetting.RecMode = originalRecMode;
-            if (message != null)
-            {
-                MessageBox.Show(message);
-            }
-        }
-
-        /// <summary>
-        /// 右クリックメニュー 予約モード変更イベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_chg_recmode_Click(object sender, RoutedEventArgs e)
-        {
-            var reserve = (ReserveData)((MenuItem)sender).DataContext;
-            byte originalRecMode = reserve.RecSetting.RecMode;
-            reserve.RecSetting.RecMode = (byte)(sender == recmode_all ? 0 :
-                                                sender == recmode_only ? 1 :
-                                                sender == recmode_all_nodec ? 2 :
-                                                sender == recmode_only_nodec ? 3 : 4);
-            string message = null;
-            try
-            {
-                ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(new List<ReserveData>() { reserve });
-                if (err != ErrCode.CMD_SUCCESS)
-                {
-                    message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                }
-            }
-            catch (Exception ex)
-            {
-                message = ex.ToString();
-            }
-            reserve.RecSetting.RecMode = originalRecMode;
-            if (message != null)
-            {
-                MessageBox.Show(message);
-            }
-        }
-
-        /// <summary>
-        /// 右クリックメニュー 優先度変更イベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_chg_priority_Click(object sender, RoutedEventArgs e)
-        {
-            var reserve = (ReserveData)((MenuItem)sender).DataContext;
-            byte originalPriority = reserve.RecSetting.Priority;
-            reserve.RecSetting.Priority = (byte)(sender == priority_1 ? 1 :
-                                                 sender == priority_2 ? 2 :
-                                                 sender == priority_3 ? 3 :
-                                                 sender == priority_4 ? 4 : 5);
-            string message = null;
-            try
-            {
-                ErrCode err = CommonManager.CreateSrvCtrl().SendChgReserve(new List<ReserveData>() { reserve });
-                if (err != ErrCode.CMD_SUCCESS)
-                {
-                    message = CommonManager.GetErrCodeText(err) ?? "予約変更でエラーが発生しました。";
-                }
-            }
-            catch (Exception ex)
-            {
-                message = ex.ToString();
-            }
-            reserve.RecSetting.Priority = originalPriority;
-            if (message != null)
-            {
-                MessageBox.Show(message);
-            }
-        }
-
-        /// <summary>
-        /// 右クリックメニュー 自動予約登録イベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_autoadd_Click(object sender, RoutedEventArgs e)
-        {
-            var reserve = (ReserveData)((MenuItem)sender).DataContext;
-            SearchWindow search = ((MainWindow)Application.Current.MainWindow).CreateSearchWindow();
-
-            var key = new EpgSearchKeyInfo();
-            if (reserve.Title != null)
-            {
-                key.andKey = reserve.Title;
-            }
-            key.serviceList.Add((long)CommonManager.Create64Key(reserve.OriginalNetworkID, reserve.TransportStreamID, reserve.ServiceID));
-
-            search.SetSearchDefKey(key);
-            search.Show();
-        }
-
-        /// <summary>
-        /// 右クリックメニュー 追っかけ再生イベント呼び出し
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void cm_timeShiftPlay_Click(object sender, RoutedEventArgs e)
-        {
-            {
-                var reserve = (ReserveData)((MenuItem)sender).DataContext;
-                CommonManager.Instance.FilePlay(reserve.ReserveID);
-            }
-        }
-
-        private void grid_content_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-        {
-            Point cursorPos = Mouse.GetPosition(tunerReserveView.canvas);
-            ReserveData reserve = GetReserveItem(cursorPos);
-            grid_content.ContextMenu.DataContext = reserve;
-
-            cm_chg.IsEnabled = reserve != null;
-            cm_del.IsEnabled = reserve != null;
-            cm_autoadd.IsEnabled = reserve != null;
-            cm_timeshift.IsEnabled = reserve != null;
-            if (reserve != null)
-            {
-                for (int i = 0; i <= 4; i++)
-                {
-                    ((MenuItem)cm_chg.Items[cm_chg.Items.IndexOf(recmode_all) + i]).IsChecked = (i == reserve.RecSetting.GetRecMode());
-                }
-                for (int i = 0; i < cm_pri.Items.Count; i++)
-                {
-                    ((MenuItem)cm_pri.Items[i]).IsChecked = (i + 1 == reserve.RecSetting.Priority);
-                }
-                cm_pri.Header = string.Format((string)cm_pri.Tag, reserve.RecSetting.Priority);
-            }
-            else
-            {
-                //表示をキャンセル
-                e.Handled = true;
-            }
-        }
-
-        /// <summary>
-        /// 予約変更
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void ChangeReserve(ReserveData reserveInfo)
-        {
-            var win = new ChgReserveWindow();
-            ((MainWindow)Application.Current.MainWindow).SwapOwnedReserveWindow(win);
-            win.SetReserveInfo(reserveInfo);
-            win.Show();
-        }
-
-        private void UserControl_Loaded(object sender, RoutedEventArgs e)
-        {
-            var ps = PresentationSource.FromVisual(this);
-            if (ps != null)
-            {
-                //高DPI環境でTunerReserveViewの位置を物理ピクセルに合わせるためにヘッダの幅を微調整する
-                //RootにUseLayoutRoundingを適用できれば不要だがボタン等が低品質になるので自力でやる
-                Point p = grid_container.TransformToVisual(ps.RootVisual).Transform(new Point(40, 40));
-                Matrix m = ps.CompositionTarget.TransformToDevice;
-                grid_container.ColumnDefinitions[0].Width = new GridLength(40 + Math.Floor(p.X * m.M11) / m.M11 - p.X);
-                grid_container.RowDefinitions[0].Height = new GridLength(40 + Math.Floor(p.Y * m.M22) / m.M22 - p.Y);
-            }
-        }
-
-        /// <summary>
-        /// 予約情報更新通知
-        /// </summary>
-        public void Refresh()
-        {
-            updateReserveData = true;
-            if (this.IsVisible == true)
-            {
-                ReloadReserveViewItem();
-                updateReserveData = false;
-            }
-        }
-
         /// <summary>
         /// 予約情報の再描画
         /// </summary>
         private void ReloadReserveViewItem()
         {
-            tunerReserveView.ClearInfo();
-            tunerReserveTimeView.ClearInfo();
-            tunerReserveNameView.ClearInfo();
-            var timeList = new List<DateTime>();
-            var tunerList = new List<TunerNameViewItem>();
-            reserveList.Clear();
             try
             {
+                tunerReserveView.ClearInfo();
+                tunerReserveTimeView.ClearInfo();
+                tunerReserveNameView.ClearInfo();
+                reserveList.Clear();
+
+                var tunerList = new List<PanelItem<TunerReserveInfo>>();
+                var timeSet = new HashSet<DateTime>();
+
+                List<TunerReserveInfo> tunerReserveList = CommonManager.Instance.DB.TunerReserveList.Values
+                    .OrderBy(info => info.tunerID).ToList();//多分大丈夫だけど一応ソートしておく
+                if (Settings.Instance.TunerDisplayOffReserve == true)
+                {
+                    var tuner_off = new TunerReserveInfo();
+                    tuner_off.tunerID = 0xFFFFFFFF;//IDの表示判定に使っている
+                    tuner_off.tunerName = "無効予約";
+                    tuner_off.reserveList = CommonManager.Instance.DB.ReserveList.Values
+                        .Where(info => info.IsEnabled == false).Select(info => info.ReserveID).ToList();
+                    tunerReserveList.Add(tuner_off);
+                }
+
+                //チューナ不足と無効予約はアイテムがなければ非表示
+                tunerReserveList.RemoveAll(item => item.tunerID == 0xFFFFFFFF && item.reserveList.Count == 0);
+
+                double singleWidth = Settings.Instance.TunerWidth;
                 double leftPos = 0;
-                foreach (TunerReserveInfo info in CommonManager.Instance.DB.TunerReserveList.Values)
+                var resDic = CommonManager.Instance.DB.ReserveList;
+                tunerReserveList.ForEach(info =>
                 {
-                    double width = 150;
-                    int addOffset = reserveList.Count();
-                    foreach (uint reserveID in info.reserveList)
+                    var cols = new List<List<ReserveViewItem>>();
+                    foreach (ReserveData resInfo in info.reserveList.Where(id => resDic.ContainsKey(id) == true).Select(id => resDic[id]).OrderBy(res => res.Create64Key()))//.ThenBy(res => res.StartTimeActual))
                     {
-                        ReserveData reserveInfo;
-                        if (CommonManager.Instance.DB.ReserveList.TryGetValue(reserveID, out reserveInfo) == false)
+                        var newItem = new TunerReserveViewItem(resInfo) { Width = singleWidth };
+                        reserveList.Add(newItem);
+
+                        //横位置の設定・列を拡げて表示する処置
+                        var addCol = cols.FindIndex(col => col.All(item =>
+                            MenuUtil.CulcOverlapLength(resInfo.StartTime, resInfo.DurationSecond, item.Data.StartTime, item.Data.DurationSecond) <= 0));
+                        if (addCol < 0)
                         {
-                            continue;
+                            addCol = cols.Count;
+                            cols.Add(new List<ReserveViewItem>());
                         }
+                        cols[addCol].Add(newItem);
+                        newItem.LeftPos = leftPos + addCol * singleWidth;
 
-                        DateTime startTime = reserveInfo.StartTime;
-                        DateTime endTime = startTime.AddSeconds(reserveInfo.DurationSecond);
-                        if (reserveInfo.RecSetting.UseMargineFlag == 1)
-                        {
-                            if (reserveInfo.RecSetting.StartMargine < 0)
-                            {
-                                startTime = startTime.AddSeconds(-reserveInfo.RecSetting.StartMargine);
-                            }
-                            if (reserveInfo.RecSetting.EndMargine < 0)
-                            {
-                                endTime = endTime.AddSeconds(reserveInfo.RecSetting.EndMargine);
-                            }
-                        }
-
-                        var viewItem = new ReserveViewItem(reserveInfo);
-                        viewItem.Height = Math.Floor((endTime - startTime).TotalMinutes * Settings.Instance.EpgSettingList[0].MinHeight);
-                        if (viewItem.Height < Settings.Instance.EpgSettingList[0].MinHeight)
-                        {
-                            viewItem.Height = Settings.Instance.EpgSettingList[0].MinHeight;
-                        }
-                        viewItem.Width = 150;
-                        viewItem.LeftPos = leftPos;
-
-                        for (int i = addOffset; i < reserveList.Count; i++)
-                        {
-                            ReserveData addInfo = reserveList[i].ReserveInfo;
-                            DateTime startTimeAdd = addInfo.StartTime;
-                            DateTime endTimeAdd = startTimeAdd.AddSeconds(addInfo.DurationSecond);
-                            if (addInfo.RecSetting.UseMargineFlag == 1)
-                            {
-                                if (addInfo.RecSetting.StartMargine < 0)
-                                {
-                                    startTimeAdd = startTimeAdd.AddSeconds(-addInfo.RecSetting.StartMargine);
-                                }
-                                if (addInfo.RecSetting.EndMargine < 0)
-                                {
-                                    endTimeAdd = endTimeAdd.AddSeconds(addInfo.RecSetting.EndMargine);
-                                }
-                            }
-
-                            if ((startTimeAdd <= startTime && startTime < endTimeAdd) ||
-                                (startTimeAdd < endTime && endTime <= endTimeAdd) ||
-                                (startTime <= startTimeAdd && startTimeAdd < endTime) ||
-                                (startTime < endTimeAdd && endTimeAdd <= endTime)
-                                )
-                            {
-                                if (reserveList[i].LeftPos == viewItem.LeftPos)
-                                {
-                                    //追加済みのものと重なるので移動して再チェック
-                                    i = addOffset - 1;
-                                    viewItem.LeftPos += 150;
-                                    width = Math.Max(width, viewItem.LeftPos + viewItem.Width - leftPos);
-                                }
-                            }
-                        }
-
-                        reserveList.Add(viewItem);
-
-                        //必要時間リストの構築
-
-                        DateTime chkStartTime = new DateTime(startTime.Year, startTime.Month, startTime.Day, startTime.Hour, 0, 0);
-                        while (chkStartTime <= endTime)
-                        {
-                            int index = timeList.BinarySearch(chkStartTime);
-                            if (index < 0)
-                            {
-                                timeList.Insert(~index, chkStartTime);
-                            }
-                            chkStartTime = chkStartTime.AddHours(1);
-                        }
-
+                        //マージン込みの時間でリストを構築
+                        ViewUtil.AddTimeList(timeSet, resInfo.StartTimeActual, resInfo.DurationActual);
                     }
-                    tunerList.Add(new TunerNameViewItem(info, width));
-                    leftPos += width;
-                }
+                    double tunerWidth = singleWidth * Math.Max(1, cols.Count);
+                    tunerList.Add(new PanelItem<TunerReserveInfo>(info) { Width = tunerWidth });
+                    leftPos += tunerWidth;
+                });
 
-                //表示位置設定
-                foreach (ReserveViewItem item in reserveList)
+                //縦位置の設定
+                var timeList = new List<DateTime>(timeSet.OrderBy(time => time));
+
+                reserveList.ForEach(item =>
                 {
-                    DateTime startTime = item.ReserveInfo.StartTime;
-                    if (item.ReserveInfo.RecSetting.UseMargineFlag == 1)
-                    {
-                        if (item.ReserveInfo.RecSetting.StartMargine < 0)
-                        {
-                            startTime = startTime.AddSeconds(-item.ReserveInfo.RecSetting.StartMargine);
-                        }
-                    }
+                    ViewUtil.SetItemVerticalPos(timeList, item, item.Data.StartTimeActual, item.Data.DurationActual, Settings.Instance.TunerMinHeight, true);
 
-                    DateTime chkStartTime = new DateTime(startTime.Year,
-                        startTime.Month,
-                        startTime.Day,
-                        startTime.Hour,
-                        0,
-                        0);
-                    int index = timeList.BinarySearch(chkStartTime);
-                    if (index >= 0)
-                    {
-                        item.TopPos = (index * 60 + (startTime - chkStartTime).TotalMinutes) * Settings.Instance.EpgSettingList[0].MinHeight;
-                    }
-                }
+                    //ごく小さいマージンの表示を抑制する。
+                    item.TopPos = Math.Round(item.TopPos);
+                    item.Height = Math.Round(item.Height);
+                });
 
-                tunerReserveTimeView.SetTime(timeList, true);
+                //最低表示行数を適用。また、最低表示高さを確保して、位置も調整する。
+                ViewUtil.ModifierMinimumLine(reserveList, Settings.Instance.TunerMinimumLine, Settings.Instance.TunerFontSizeService, Settings.Instance.TunerBorderTopSize);
+
+                //必要時間リストの修正。最低表示行数の適用で下に溢れた分を追加する。
+                ViewUtil.AdjustTimeList(reserveList, timeList, Settings.Instance.TunerMinHeight);
+
+                tunerReserveTimeView.SetTime(timeList, false, true);
                 tunerReserveNameView.SetTunerInfo(tunerList);
                 tunerReserveView.SetReserveList(reserveList,
                     leftPos,
-                    timeList.Count * 60 * Settings.Instance.EpgSettingList[0].MinHeight);
+                    timeList.Count * 60 * Settings.Instance.TunerMinHeight);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
 
-        private void UserControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        protected override void UserControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            if (updateReserveData && IsVisible)
+            base.UserControl_IsVisibleChanged(sender, e);
+
+            if (this.IsVisible == false) return;
+
+            if (BlackoutWindow.HasReserveData == true)
             {
-                ReloadReserveViewItem();
-                updateReserveData = false;
+                MoveToItem(BlackoutWindow.SelectedItem.ReserveInfo.ReserveID, BlackoutWindow.NowJumpTable == true ? JumpItemStyle.JumpTo : JumpItemStyle.None);
             }
+
+            BlackoutWindow.Clear();
+        }
+
+        public override int MoveToItem(ulong id, JumpItemStyle style = JumpItemStyle.MoveTo, bool dryrun = false)
+        {
+            int idx = reserveList.FindIndex(item => item.Data.ReserveID == id);
+            if (idx != -1 && dryrun == false) tunerReserveView.ScrollToFindItem(reserveList[idx], style);
+            if (dryrun == false) ItemIdx = idx;
+            return idx;
+        }
+        public override object MoveNextItem(int direction, ulong id = 0, bool move = true, JumpItemStyle style = JumpItemStyle.MoveTo)
+        {
+            return ViewUtil.MoveNextReserve(ref itemIdx, tunerReserveView, reserveList, ref clickPos, id, direction, move, style);
+        }
+        public override object MoveNextReserve(int direction, ulong id = 0, bool move = true, JumpItemStyle style = JumpItemStyle.MoveTo)
+        {
+            return MoveNextItem(direction, id, move, style);
         }
     }
 }

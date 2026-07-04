@@ -1,17 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.IO;
 
 namespace EpgTimer.Setting
 {
@@ -24,37 +13,50 @@ namespace EpgTimer.Setting
         {
             InitializeComponent();
 
-            textBox_replaceTest.Text = "C:\\Test\\ファイル";
-        }
+            button_exe.Click += ViewUtil.OpenFileNameDialog(textBox_exe, false, "", ".exe");
+            button_playExe.Click += ViewUtil.OpenFileNameDialog(textBox_playExe, false, "", ".exe");
 
-        private void button_exe_Click(object sender, RoutedEventArgs e)
-        {
-            Microsoft.Win32.OpenFileDialog dlg = new Microsoft.Win32.OpenFileDialog();
-            dlg.DefaultExt = ".exe";
-            dlg.Filter = "exe Files (.exe)|*.exe;|all Files(*.*)|*.*";
-
-            Nullable<bool> result = dlg.ShowDialog();
-            if (result == true)
+            //エスケープキャンセルだけは常に有効にする。
+            var bx = new BoxExchangeEdit.BoxExchangeEditor(null, this.listBox_bon, true);
+            if (CommonManager.Instance.NWMode == false)
             {
-                textBox_exe.Focus();
-                textBox_exe.Text = dlg.FileName;
+                bx.AllowDragDrop();
+                bx.AllowKeyAction();
+                button_up.Click += bx.button_Up_Click;
+                button_down.Click += bx.button_Down_Click;
+                button_del.Click += bx.button_Delete_Click;
+                button_add.Click += (sender, e) => ViewUtil.ListBox_TextCheckAdd(listBox_bon, comboBox_bon.Text);
+            }
+            else
+            {
+                label3.IsEnabled = false;
+                panel_bonButtons.IsEnabled = false;
+                button_add.IsEnabled = false;
             }
         }
 
-        private void button_playExe_Click(object sender, RoutedEventArgs e)
+        public void LoadSetting()
         {
-            Microsoft.Win32.OpenFileDialog dlg = new Microsoft.Win32.OpenFileDialog();
-            dlg.DefaultExt = ".exe";
-            dlg.Filter = "exe Files (.exe)|*.exe;|all Files(*.*)|*.*";
+            comboBox_bon.ItemsSource = CommonManager.GetBonFileList();
+            comboBox_bon.SelectedIndex = 0;
 
-            Nullable<bool> result = dlg.ShowDialog();
-            if (result == true)
+            listBox_bon.Items.Clear();
+            int num = IniFileHandler.GetPrivateProfileInt("TVTEST", "Num", 0, SettingPath.TimerSrvIniPath);
+            for (uint i = 0; i < num; i++)
             {
-                textBox_playExe.Focus();
-                textBox_playExe.Text = dlg.FileName;
+                string item = IniFileHandler.GetPrivateProfileString("TVTEST", i.ToString(), "", SettingPath.TimerSrvIniPath);
+                if (item.Length > 0) listBox_bon.Items.Add(item);
             }
         }
-
+        public void SaveSetting()
+        {
+            IniFileHandler.WritePrivateProfileString("TVTEST", "Num", listBox_bon.Items.Count, SettingPath.TimerSrvIniPath);
+            IniFileHandler.DeletePrivateProfileNumberKeys("TVTEST", SettingPath.TimerSrvIniPath);
+            for (int i = 0; i < listBox_bon.Items.Count; i++)
+            {
+                IniFileHandler.WritePrivateProfileString("TVTEST", i.ToString(), listBox_bon.Items[i], SettingPath.TimerSrvIniPath);
+            }
+        }
         private void replaceTest_TextChanged(object sender, TextChangedEventArgs e)
         {
             textBox_replaceTestResult.Text =

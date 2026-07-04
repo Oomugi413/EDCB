@@ -1,393 +1,102 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.ComponentModel;
-using System.Collections.ObjectModel;
-
 
 namespace EpgTimer
 {
     /// <summary>
     /// RecInfoView.xaml の相互作用ロジック
     /// </summary>
-    public partial class RecInfoView : UserControl
+    public partial class RecInfoView : DataItemViewBase
     {
-        private Dictionary<string, GridViewColumn> columnList;
-        private string _lastHeaderClicked2 = "";
-        private ListSortDirection _lastDirection2 = ListSortDirection.Ascending;
-        private ListViewHorizontalMouseScroller horizontalScroller = new ListViewHorizontalMouseScroller();
-        private bool ReloadInfo = true;
+        private ListViewController<RecInfoItem> lstCtrl;
+        private CmdExeRecinfo mc;
+        protected override ListBox DataListBox { get { return listView_recinfo; } }
 
         public RecInfoView()
         {
             InitializeComponent();
 
-            columnList = gridView_recinfo.Columns.ToDictionary(info => (string)((GridViewColumnHeader)info.Header).Tag);
-            gridView_recinfo.Columns.Clear();
-            foreach (ListColumnInfo info in Settings.Instance.RecInfoListColumn)
-            {
-                if (columnList.ContainsKey(info.Tag))
-                {
-                    columnList[info.Tag].Width = info.Width;
-                    gridView_recinfo.Columns.Add(columnList[info.Tag]);
-                }
-            }
-            if (Settings.Instance.RecInfoHideButton)
-            {
-                stackPanel_button.Visibility = Visibility.Collapsed;
-            }
-            listView_recinfo.AlternationCount = Settings.Instance.RecEndAlternationCount;
-        }
-
-        public void SaveSize()
-        {
-            Settings.Instance.RecInfoListColumn.Clear();
-            Settings.Instance.RecInfoListColumn.AddRange(
-                gridView_recinfo.Columns.Select(info => new ListColumnInfo((string)((GridViewColumnHeader)info.Header).Tag, info.Width)));
-        }
-
-        private void button_del_Click(object sender, RoutedEventArgs e)
-        {
             try
             {
-                if (listView_recinfo.SelectedItems.Count > 0)
+                //リストビュー関連の設定
+                lstCtrl = new ListViewController<RecInfoItem>(this);
+                lstCtrl.SetSavePath(CommonUtil.NameOf(() => Settings.Instance.RecInfoListColumn)
+                    , CommonUtil.NameOf(() => Settings.Instance.RecInfoColumnHead)
+                    , CommonUtil.NameOf(() => Settings.Instance.RecInfoSortDirection));
+                lstCtrl.SetViewSetting(listView_recinfo, gridView_recinfo, true, true);
+                lstCtrl.SetSelectedItemDoubleClick((sender, e) =>
                 {
-                    if ((sender is ListViewItem) || Settings.Instance.ConfirmDelRecInfo)
-                    {
-                        bool hasPath = listView_recinfo.SelectedItems.Cast<RecInfoItem>().Any(info => info.RecFilePath.Length > 0);
-                        if ((hasPath || (sender is ListViewItem) || Settings.Instance.ConfirmDelRecInfoAlways) &&
-                            MessageBox.Show(listView_recinfo.SelectedItems.Count + "項目を削除してよろしいですか?" +
-                                            (hasPath ? "\r\n\r\n「録画ファイルも削除する」設定が有効な場合、ファイルも削除されます。" : ""), "確認",
-                                            MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.OK) != MessageBoxResult.OK)
-                        {
-                            return;
-                        }
-                    }
-                    List<uint> IDList = new List<uint>();
-                    foreach (RecInfoItem info in listView_recinfo.SelectedItems)
-                    {
-                        IDList.Add(info.RecInfo.ID);
-                    }
-                    CommonManager.CreateSrvCtrl().SendDelRecInfo(IDList);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
+                    var cmd = Settings.Instance.PlayDClick == true ? EpgCmds.Play : EpgCmds.ShowDialog;
+                    cmd.Execute(sender, listView_recinfo);
+                });
 
-        private void Sort()
-        {
-            if (listView_recinfo.ItemsSource == null)
-            {
-                return;
-            }
-            ICollectionView dataView = CollectionViewSource.GetDefaultView(listView_recinfo.ItemsSource);
+                //ステータス変更の設定
+                lstCtrl.SetSelectionChangedEventHandler((sender, e) => this.UpdateStatus(1));
 
-            using (dataView.DeferRefresh())
-            {
-                dataView.SortDescriptions.Clear();
-
-                dataView.SortDescriptions.Add(new SortDescription(Settings.Instance.RecInfoColumnHead, Settings.Instance.RecInfoSortDirection));
-                if (columnList.ContainsKey(_lastHeaderClicked2))
+                //最初にコマンド集の初期化
+                mc = new CmdExeRecinfo(this);
+                mc.SetFuncGetDataList(isAll => (isAll == true ? lstCtrl.dataList : lstCtrl.GetSelectedItemsList()).RecInfoList());
+                mc.SetFuncSelectSingleData((noChange) =>
                 {
-                    dataView.SortDescriptions.Add(new SortDescription(_lastHeaderClicked2, _lastDirection2));
-                }
+                    var item = lstCtrl.SelectSingleItem(noChange);
+                    return item == null ? null : item.RecInfo;
+                });
+                mc.SetFuncReleaseSelectedData(() => listView_recinfo.UnselectAll());
+
+                //コマンド集に無いもの
+                mc.AddReplaceCommand(EpgCmds.ChgOnOffCheck, (sender, e) => lstCtrl.ChgOnOffFromCheckbox(e.Parameter, EpgCmds.ProtectChange));
+
+                //コマンド集からコマンドを登録
+                mc.ResetCommandBindings(this, listView_recinfo.ContextMenu);
+
+                //コンテキストメニューを開く時の設定
+                listView_recinfo.ContextMenu.Opened += new RoutedEventHandler(mc.SupportContextMenuLoading);
+
+                //ボタンの設定
+                mBinds.View = CtxmCode.RecInfoView;
+                mBinds.SetCommandToButton(button_Delete, EpgCmds.Delete);
+                mBinds.SetCommandToButton(button_DeleteAll, EpgCmds.DeleteAll);
+                mBinds.SetCommandToButton(button_Play, EpgCmds.Play);
+                mBinds.SetCommandToButton(button_ToAutoadd, EpgCmds.ToAutoadd);
+                mBinds.SetCommandToButton(button_OpenFolder, EpgCmds.OpenFolder);
             }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
-
-        private void GridViewColumnHeader_Click(object sender, RoutedEventArgs e)
+        public void RefreshMenu()
         {
-            GridViewColumnHeader headerClicked = e.OriginalSource as GridViewColumnHeader;
-
-            if (headerClicked != null)
+            mBinds.ResetInputBindings(this, listView_recinfo);
+            mm.CtxmGenerateContextMenu(listView_recinfo.ContextMenu, CtxmCode.RecInfoView, true);
+        }
+        public void SaveViewData()
+        {
+            lstCtrl.SaveViewDataToSettings();
+        }
+        protected override bool ReloadInfoData()
+        {
+            return lstCtrl.ReloadInfoData(dataList =>
             {
-                if (headerClicked.Role != GridViewColumnHeaderRole.Padding)
+                ErrCode err = CommonManager.Instance.DB.ReloadRecFileInfo();
+                if (CommonManager.CmdErrMsgTypical(err, "録画情報の取得") == false) return false;
+
+                dataList.AddRange(CommonManager.Instance.DB.RecFileInfo.Values.Select(info => new RecInfoItem(info)));
+
+                //ツールチップに番組情報を表示する場合は先に一括で詳細情報を読込んでおく
+                if (Settings.Instance.NoToolTip == false && Settings.Instance.RecInfoToolTipMode == 1)
                 {
-                    string header = headerClicked.Tag as string;
-                    if (header != Settings.Instance.RecInfoColumnHead)
-                    {
-                        _lastHeaderClicked2 = Settings.Instance.RecInfoColumnHead;
-                        _lastDirection2 = Settings.Instance.RecInfoSortDirection;
-                        Settings.Instance.RecInfoColumnHead = header;
-                        Settings.Instance.RecInfoSortDirection = ListSortDirection.Ascending;
-                    }
-                    else if (Settings.Instance.RecInfoSortDirection == ListSortDirection.Ascending)
-                    {
-                        Settings.Instance.RecInfoSortDirection = ListSortDirection.Descending;
-                    }
-                    else
-                    {
-                        Settings.Instance.RecInfoSortDirection = ListSortDirection.Ascending;
-                    }
-                    Sort();
-                }
-            }
-        }
-
-        public bool ReloadInfoData()
-        {
-            if (CommonManager.Instance.NWMode && CommonManager.Instance.NWConnectedIP == null)
-            {
-                listView_recinfo.ItemsSource = null;
-                return false;
-            }
-            ErrCode err = CommonManager.Instance.DB.ReloadrecFileInfo();
-            if (err != ErrCode.CMD_SUCCESS)
-            {
-                Dispatcher.BeginInvoke(new Action(() => MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "情報の取得でエラーが発生しました。")));
-                listView_recinfo.ItemsSource = null;
-                return false;
-            }
-            listView_recinfo.ItemsSource = CommonManager.Instance.DB.RecFileInfo.Values.Select(info => new RecInfoItem(info)).ToList();
-
-            if (columnList.ContainsKey(Settings.Instance.RecInfoColumnHead) == false)
-            {
-                Settings.Instance.RecInfoColumnHead = "StartTime";
-            }
-            Sort();
-            return true;
-        }
-
-        /// <summary>
-        /// リストの更新通知
-        /// </summary>
-        public void UpdateInfo()
-        {
-            ReloadInfo = true;
-            if (this.IsVisible == true)
-            {
-                if (ReloadInfoData() == true)
-                {
-                    ReloadInfo = false;
-                }
-            }
-        }
-
-        private void listView_recinfo_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            if (Settings.Instance.PlayDClick)
-            {
-                button_play_Click(sender, e);
-            }
-            else
-            {
-                button_recInfo_Click(sender, e);
-            }
-            e.Handled = true;
-        }
-
-        private void listView_recinfo_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                switch (e.Key)
-                {
-                    case Key.P:
-                        if (e.IsRepeat == false)
-                        {
-                            button_play_Click(sender, e);
-                        }
-                        e.Handled = true;
-                        break;
-                    case Key.O:
-                        if (e.IsRepeat == false)
-                        {
-                            openFolder_Click(sender, e);
-                        }
-                        e.Handled = true;
-                        break;
-                }
-            }
-            else if (Keyboard.Modifiers == ModifierKeys.None)
-            {
-                switch (e.Key)
-                {
-                    case Key.Enter:
-                        button_recInfo_Click(sender, e);
-                        e.Handled = true;
-                        break;
-                    case Key.Delete:
-                        button_del_Click(sender, e);
-                        e.Handled = true;
-                        break;
-                }
-            }
-        }
-
-        private void button_play_Click(object sender, RoutedEventArgs e)
-        {
-            if (listView_recinfo.SelectedItem != null)
-            {
-                RecFileInfo info = ((RecInfoItem)listView_recinfo.SelectedItem).RecInfo;
-                if (info.RecFilePath.Length > 0)
-                {
-                    CommonManager.Instance.FilePlay(info.RecFilePath);
-                }
-            }
-        }
-
-        private void autoadd_Click(object sender, RoutedEventArgs e)
-        {
-            if (listView_recinfo.SelectedItem != null)
-            {
-                RecInfoItem item = listView_recinfo.SelectedItem as RecInfoItem;
-
-                SearchWindow search = ((MainWindow)Application.Current.MainWindow).CreateSearchWindow();
-
-                var key = new EpgSearchKeyInfo();
-                key.andKey = item.RecInfo.Title;
-                key.serviceList.Add((long)CommonManager.Create64Key(item.RecInfo.OriginalNetworkID, item.RecInfo.TransportStreamID, item.RecInfo.ServiceID));
-
-                search.SetSearchDefKey(key);
-                search.Show();
-            }
-        }
-
-        private void UserControl_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (ReloadInfo == true && this.IsVisible == true)
-            {
-                if (ReloadInfoData() == true)
-                {
-                    ReloadInfo = false;
-                }
-            }
-        }
-
-        private void button_recInfo_Click(object sender, RoutedEventArgs e)
-        {
-            if (listView_recinfo.SelectedItem != null)
-            {
-                RecFileInfo info = ((RecInfoItem)listView_recinfo.SelectedItem).RecInfo;
-                var win = new RecInfoDescWindow();
-                ((MainWindow)Application.Current.MainWindow).SwapOwnedReserveWindow(win);
-                RecFileInfo extraRecInfo = new RecFileInfo();
-                if (CommonManager.CreateSrvCtrl().SendGetRecInfo(info.ID, ref extraRecInfo) == ErrCode.CMD_SUCCESS)
-                {
-                    info.ProgramInfo = extraRecInfo.ProgramInfo;
-                    info.ErrInfo = extraRecInfo.ErrInfo;
-                }
-                win.SetRecInfo(info);
-                win.Show();
-            }
-        }
-
-        private void openFolder_Click(object sender, RoutedEventArgs e)
-        {
-            if (listView_recinfo.SelectedItem != null)
-            {
-                string folderPath = "";
-                RecInfoItem info = listView_recinfo.SelectedItem as RecInfoItem;
-                if (info.RecFilePath.Length > 0)
-                {
-                    string filePath =
-                        CommonManager.ReplaceText(info.RecFilePath, CommonManager.CreateReplaceDictionary(Settings.Instance.FilePathReplacePattern));
-                    try
-                    {
-                        if (System.IO.File.Exists(filePath))
-                        {
-                            using (System.Diagnostics.Process.Start("EXPLORER.EXE", "/select,\"" + filePath + "\"")) { }
-                            return;
-                        }
-                        try
-                        {
-                            folderPath = System.IO.Path.GetDirectoryName(filePath);
-                        }
-                        catch { }
-                        if (System.IO.Directory.Exists(folderPath))
-                        {
-                            using (System.Diagnostics.Process.Start("EXPLORER.EXE", "\"" + folderPath + "\"")) { }
-                            return;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show(ex.ToString());
-                        return;
-                    }
-                }
-                MessageBox.Show("録画フォルダ" + (folderPath.Length > 0 ? " \"" + folderPath + "\" " : "") + "が存在しません");
-            }
-        }
-
-
-        private void ContextMenu_Header_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-        {
-            foreach (object item in listView_recinfo.ContextMenu.Items)
-            {
-                MenuItem menuItem = item as MenuItem;
-                if (menuItem != null)
-                {
-                    if (menuItem.Name == "HideButton")
-                    {
-                        menuItem.IsChecked = Settings.Instance.RecInfoHideButton;
-                    }
-                    else
-                    {
-                        menuItem.IsChecked = Settings.Instance.RecInfoListColumn.Any(info => info.Tag == menuItem.Name);
-                    }
-                }
-            }
-        }
-
-        private void headerSelect_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                MenuItem menuItem = sender as MenuItem;
-                if (menuItem.IsChecked == true)
-                {
-
-                    Settings.Instance.RecInfoListColumn.Add(new ListColumnInfo(menuItem.Name, double.NaN));
-                    gridView_recinfo.Columns.Add(columnList[menuItem.Name]);
-                }
-                else
-                {
-                    foreach (ListColumnInfo info in Settings.Instance.RecInfoListColumn)
-                    {
-                        if (info.Tag == menuItem.Name)
-                        {
-                            Settings.Instance.RecInfoListColumn.Remove(info);
-                            gridView_recinfo.Columns.Remove(columnList[menuItem.Name]);
-                            break;
-                        }
-                    }
+                    CommonManager.Instance.DB.ReadRecFileAppend();
                 }
 
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
+                return true;
+            });
         }
-
-        private void hideButton_Click(object sender, RoutedEventArgs e)
+        protected override void UpdateStatusData(int mode = 0)
         {
-            Settings.Instance.RecInfoHideButton = ((MenuItem)sender).IsChecked;
-            stackPanel_button.Visibility = Settings.Instance.RecInfoHideButton ? Visibility.Collapsed : Visibility.Visible;
-        }
-
-        private void listView_recinfo_MouseEnter(object sender, MouseEventArgs e)
-        {
-            horizontalScroller.OnMouseEnter(listView_recinfo, Settings.Instance.EpgSettingList[0].MouseHorizontalScrollAuto,
-                                            Settings.Instance.EpgSettingList[0].HorizontalScrollSize);
-        }
-
-        private void listView_recinfo_MouseLeave(object sender, MouseEventArgs e)
-        {
-            horizontalScroller.OnMouseLeave();
+            if (mode == 0) this.status[1] = ViewUtil.ConvertRecinfoStatus(lstCtrl.dataList, "録画結果");
+            List<RecInfoItem> sList = lstCtrl.GetSelectedItemsList();
+            this.status[2] = sList.Count == 0 ? "" : ViewUtil.ConvertRecinfoStatus(sList, "　選択中");
         }
     }
 }

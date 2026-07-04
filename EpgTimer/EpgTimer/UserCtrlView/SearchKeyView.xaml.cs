@@ -1,534 +1,394 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace EpgTimer
 {
+    using BoxExchangeEdit;
+
     /// <summary>
-    /// SearchKeyView.xaml の相互作用ロジック
+    /// SearchKey.xaml の相互作用ロジック
     /// </summary>
-    public partial class SearchKeyView : UserControl
+    public partial class SearchKeyView : UserControl, IPresetItemView
     {
+        public const string ClearButtonTooltip = "即時にクリアされ、設定画面をキャンセルしても戻りません";
+
+        private List<ServiceViewItem> serviceList;
+        private List<CheckBox> chbxWeekList;
+
+        private PresetEditor<SearchPresetItem> preEdit = new PresetEditor<SearchPresetItem>();
+        private ComboBox comboBox_preSet;
+
         public SearchKeyView()
         {
             InitializeComponent();
 
-            foreach (string info in Settings.Instance.AndKeyList)
-            {
-                comboBox_andKey.Items.Add(info);
-            }
-            foreach (string info in Settings.Instance.NotKeyList)
-            {
-                comboBox_notKey.Items.Add(info);
-            }
+            Settings.Instance.AndKeyList.ForEach(s => comboBox_andKey.Items.Add(s));
+            Settings.Instance.NotKeyList.ForEach(s => comboBox_notKey.Items.Add(s));
+            Button_clearAndKey.Click += (sender, e) => ClearSerchLog(comboBox_andKey, Settings.Instance.AndKeyList);
+            Button_clearNotKey.Click += (sender, e) => ClearSerchLog(comboBox_notKey, Settings.Instance.NotKeyList);
 
-            EnableContentListBox(false);
-            foreach (ushort id in CommonManager.Instance.ContentKindList)
-            {
-                comboBox_content.Items.Add(new ContentKindInfo() { Nibble1 = (byte)(id >> 8), Nibble2 = (byte)id });
-            }
+            comboBox_content.ItemsSource = CommonManager.ContentKindList;
             comboBox_content.SelectedIndex = 0;
+            comboBox_content.KeyUp += ViewUtil.KeyDown_Enter(button_content_add);
 
-            EnableDateListBox(false);
-            comboBox_time_sw.ItemsSource = Enumerable.Range(0, 7).Select(i => (new DateTime(2000, 1, 2 + i)).ToString("ddd"));
+            comboBox_time_sw.ItemsSource = CommonManager.DayOfWeekArray;
             comboBox_time_sw.SelectedIndex = 0;
             comboBox_time_sh.ItemsSource = Enumerable.Range(0, 24);
             comboBox_time_sh.SelectedIndex = 0;
             comboBox_time_sm.ItemsSource = Enumerable.Range(0, 60);
             comboBox_time_sm.SelectedIndex = 0;
-            comboBox_time_ew.ItemsSource = Enumerable.Range(0, 7).Select(i => (new DateTime(2000, 1, 2 + i)).ToString("ddd"));
+            comboBox_time_ew.ItemsSource = CommonManager.DayOfWeekArray;
             comboBox_time_ew.SelectedIndex = 6;
             comboBox_time_eh.ItemsSource = Enumerable.Range(0, 24);
             comboBox_time_eh.SelectedIndex = 23;
             comboBox_time_em.ItemsSource = Enumerable.Range(0, 60);
             comboBox_time_em.SelectedIndex = 59;
-            comboBox_week_sh.ItemsSource = Enumerable.Range(0, 24);
+            comboBox_week_sh.ItemsSource = CommonManager.CustomHourList;
             comboBox_week_sh.SelectedIndex = 0;
             comboBox_week_sm.ItemsSource = Enumerable.Range(0, 60);
             comboBox_week_sm.SelectedIndex = 0;
-            radioButton_week.IsChecked = true;
+            comboBox_week_eh.ItemsSource = CommonManager.CustomHourList;
+            comboBox_week_eh.SelectedIndex = 23;
+            comboBox_week_em.ItemsSource = Enumerable.Range(0, 60);
+            comboBox_week_em.SelectedIndex = 59;
+            ViewUtil.Set_ComboBox_LostFocus_SelectItemUInt(comboBox_time_sh, comboBox_time_sm, comboBox_time_eh, comboBox_time_em);
+            ViewUtil.Set_ComboBox_LostFocus_SelectItemUInt(panel_data_week_times);
 
-            foreach (ChSet5Item info in ChSet5.Instance.ChListSelected)
-            {
-                if (ChSet5.IsCS3(info.ONID))
+            new BoxExchangeEdit.BoxExchangeEditor(null, listView_service, true);
+            SelectableItem.Set_CheckBox_PreviewChanged(listView_service);
+            serviceList = ChSet5.ChListSelected.Select(info => new ServiceViewItem(info)).ToList();
+            listView_service.ItemsSource = serviceList;
+            listView_service.FitColumnWidth();//他は勝手にフィットするのに‥なぜこれだけ？
+
+            var bxc = new BoxExchangeEdit.BoxExchangeEditor(null, listBox_content, true, true);
+            button_content_clear.Click += (sender, e) => { bxc.button_DeleteAll_Click(sender, e); CheckListBox(listBox_content); };
+            button_content_del.Click += (sender, e) => { bxc.button_Delete_Click(sender, e); CheckListBox(listBox_content); };
+            button_content_add.Click += button_content_add_Click;
+            bxc.targetBoxAllowKeyAction(listBox_content, (sender, e) => button_content_del.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            listBox_content.Tag = new { ListBoxView = "(全ジャンル)" };
+            CheckListBox(listBox_content);
+
+            var bxd = new BoxExchangeEdit.BoxExchangeEditor(null, listBox_date, true, true);
+            button_date_clear.Click += (sender, e) => { bxd.button_DeleteAll_Click(sender, e); CheckListBox(listBox_date); };
+            button_date_del.Click += (sender, e) => { bxd.button_Delete_Click(sender, e); CheckListBox(listBox_date); };
+            button_date_add.Click += button_date_add_Click;
+            bxd.targetBoxAllowKeyAction(listBox_date, (sender, e) => button_date_del.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            listBox_date.Tag = "(全期間)";
+            CheckListBox(listBox_date);
+
+            byte idx = 0;
+            chbxWeekList = CommonManager.DayOfWeekArray.Select(wd =>
+                new CheckBox { Content = wd, Margin = new Thickness(0, 0, 5, 0), Tag = idx++ }).ToList();
+            chbxWeekList.ForEach(chbx => stack_data_week.Children.Add(chbx));
+
+            grid_PresetEdit.Children.Clear();
+            grid_PresetEdit.Children.Add(preEdit);
+            comboBox_preSet = preEdit.comboBox_preSet;
+            preEdit.Set(this,
+                (item, msg) => UpdateView(item),
+                (list, mode) =>
                 {
-                    button_cs3.Visibility = Visibility.Visible;
-                }
-                listView_service.Items.Add(new ServiceItem(CommonManager.ConvertChSet5To(info)));
-            }
-
-            if (0 <= Settings.Instance.SearchWndNotKeyRatio && Settings.Instance.SearchWndNotKeyRatio <= 1)
+                    Settings.Instance.SearchPresetList = list;
+                    Settings.SaveToXmlFile();
+                    SettingWindow.UpdatesInfo("検索プリセット変更");
+                    if (comboBox_preSet.SelectedItem == null)
+                    {
+                        preEdit.ChangeSelect(preEdit.FindPreset(PresetItem.CustomID), null, true);
+                    }
+                },
+                "検索プリセット", SetSearchPresetWindow.SettingWithDialog);
+            if (Settings.Instance.UseLastSearchKey == true)
             {
-                columnDefinition_notKey.Width = new GridLength(Settings.Instance.SearchWndNotKeyRatio, GridUnitType.Star);
-                columnDefinition_note.Width = new GridLength(1 - Settings.Instance.SearchWndNotKeyRatio, GridUnitType.Star);
+                comboBox_preSet.Items.Add(new SearchPresetItem("前回検索条件", SearchPresetItem.LastID, null));
+            }
+            checkBox_setWithoutSearchKeyWord.IsChecked = Settings.Instance.SetWithoutSearchKeyWord;
+        }
+
+        public void SetData(object data) { SetSearchKey(data as EpgSearchKeyInfo); }
+        public object GetData() { return GetSearchKey(); }
+        public IEnumerable<PresetItem> DefPresetList() { return Settings.Instance.SearchPresetList.DeepClone(); }
+
+        protected virtual void ComboBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var tb = e.OriginalSource as TextBox;
+            if (tb != null)
+            {
+                ((ComboBox)sender).Text = tb.Text;
             }
         }
 
-        public void FocusAndKey()
+        public void AddSearchLog()
         {
-            comboBox_andKey.Focus();
-        }
+            if (Settings.Instance.SaveSearchKeyword == false) return;
 
-        public void SaveSearchLog()
+            AddSerchLog(comboBox_andKey, Settings.Instance.AndKeyList);
+            AddSerchLog(comboBox_notKey, Settings.Instance.NotKeyList);
+        }
+        private void AddSerchLog(ComboBox box, List<string> log)
         {
-            string key = comboBox_andKey.Text;
-            if (key.Length > 0)
+            try
             {
-                foreach (string info in comboBox_andKey.Items)
-                {
-                    if (key.Equals(info, StringComparison.OrdinalIgnoreCase))
-                    {
-                        comboBox_andKey.Items.Remove(info);
-                        comboBox_andKey.Text = key;
-                        break;
-                    }
-                }
-                comboBox_andKey.Items.Insert(0, key);
+                string searchWord = box.Text;
+                if (string.IsNullOrEmpty(searchWord) == true) return;
+
+                box.Items.Remove(searchWord);
+                box.Items.Insert(0, searchWord);
+                box.Text = searchWord;
+
+                SaveSearchLogSettings(box, log);
             }
-            key = comboBox_notKey.Text;
-            if (key.Length > 0)
+            catch { }
+        }
+        private void comboBox_andKey_KeyUp(object sender, KeyEventArgs e)
+        {
+            comboBox_KeyUp(sender, e, Settings.Instance.AndKeyList);
+        }
+        private void comboBox_notKey_KeyUp(object sender, KeyEventArgs e)
+        {
+            comboBox_KeyUp(sender, e, Settings.Instance.NotKeyList);
+        }
+        private void comboBox_KeyUp(object sender, KeyEventArgs e, List<string> log)
+        {
+            var box = sender as ComboBox;
+            if (e.Handled == false && Keyboard.Modifiers == ModifierKeys.None && e.Key == Key.Delete && box.IsDropDownOpen)
             {
-                foreach (string info in comboBox_notKey.Items)
+                int i = box.SelectedIndex;
+                if (i >= 0)
                 {
-                    if (key.Equals(info, StringComparison.OrdinalIgnoreCase))
-                    {
-                        comboBox_notKey.Items.Remove(info);
-                        comboBox_notKey.Text = key;
-                        break;
-                    }
+                    box.Items.RemoveAt(i);
+                    box.SelectedIndex = Math.Min(i, box.Items.Count - 1);
+                    SaveSearchLogSettings(box, log);
                 }
-                comboBox_notKey.Items.Insert(0, key);
+                e.Handled = true;
             }
-            SaveSearchLogSettings();
+        }
+        private void ClearSerchLog(ComboBox box, List<string> log)
+        {
+            string searchWord = box.Text;
+            box.Items.Clear();
+            box.Text = searchWord;
+            SaveSearchLogSettings(box, log);
+        }
+        private void SaveSearchLogSettings(ComboBox box, List<string> log)
+        {
+            log.Clear();
+            log.AddRange(box.Items.OfType<string>().Take(30));
         }
 
         public EpgSearchKeyInfo GetSearchKey()
         {
             var key = new EpgSearchKeyInfo();
-            key.andKey = comboBox_andKey.Text;
-            key.notKey = comboBox_notKey.Text;
-            key.regExpFlag = checkBox_regExp.IsChecked == true ? 1 : 0;
-            key.aimaiFlag = (byte)(key.regExpFlag == 0 && checkBox_aimai.IsChecked == true ? 1 : 0);
-            key.titleOnlyFlag = checkBox_titleOnly.IsChecked == true ? 1 : 0;
-            uint durMin;
-            uint durMax;
-            if (uint.TryParse(textBox_chkDurationMin.Text, out durMin) &&
-                uint.TryParse(textBox_chkDurationMax.Text, out durMax) && (durMin > 0 || durMax > 0))
+            try
             {
-                key.andKey = "D!{" + ((10000 + Math.Min(durMin, 9999)) * 10000 + Math.Min(durMax, 9999)) + "}" + key.andKey;
+                key.andKey = comboBox_andKey.Text;
+                key.notKey = comboBox_notKey.Text;
+                key.note = textBox_note.Text.Trim();
+                key.regExpFlag = checkBox_regExp.IsChecked == true ? 1 : 0;
+                key.aimaiFlag = (byte)(checkBox_aimai.IsChecked == true ? 1 : 0);
+                key.titleOnlyFlag = checkBox_titleOnly.IsChecked == true ? 1 : 0;
+                key.caseFlag = (byte)(checkBox_case.IsChecked == true ? 1 : 0);
+                key.keyDisabledFlag = (byte)(checkBox_keyDisabled.IsChecked == true ? 1 : 0);
+                key.contentList = listBox_content.Items.OfType<ContentKindInfo>().Select(info => info.Data).DeepClone();
+                key.notContetFlag = (byte)(checkBox_notContent.IsChecked == true ? 1 : 0);
+                key.serviceList = serviceList.Where(info => info.IsSelected == true).Select(info => (long)info.Key).ToList();
+                key.dateList = listBox_date.Items.OfType<DateItem>().Select(info => info.DateInfo).ToList();
+                key.notDateFlag = (byte)(checkBox_notDate.IsChecked == true ? 1 : 0);
+                key.freeCAFlag = (byte)Math.Min(Math.Max(comboBox_free.SelectedIndex, 0), 2);
+                key.chkRecEnd = (byte)(checkBox_chkRecEnd.IsChecked == true ? 1 : 0);
+                key.chkRecDay = (ushort)MenuUtil.MyToNumerical(textBox_chkRecDay, Convert.ToUInt32, 9999u, 0u, 0u);
+                key.chkRecNoService = (byte)(radioButton_chkRecNoService2.IsChecked == true ? 1 : 0);
+                key.chkDurationMin = (ushort)MenuUtil.MyToNumerical(textBox_chkDurationMin, Convert.ToUInt32, 9999u, 0u, 0u);
+                key.chkDurationMax = (ushort)MenuUtil.MyToNumerical(textBox_chkDurationMax, Convert.ToUInt32, 9999u, 0u, 0u);
             }
-            if (checkBox_case.IsChecked == true)
-            {
-                key.andKey = "C!{999}" + key.andKey;
-            }
-            if (checkBox_keyDisabled.IsChecked == true)
-            {
-                key.andKey = "^!{999}" + key.andKey;
-            }
-            if (textBox_note.Text.Length > 0 || key.notKey.StartsWith(":note:", StringComparison.Ordinal))
-            {
-                key.notKey = ":note:" + textBox_note.Text.Replace("\\", "\\\\").Replace(" ", "\\s").Replace("　", "\\m") +
-                             (key.notKey.Length > 0 ? " " + key.notKey : "");
-            }
-
-            if (listBox_content.IsEnabled)
-            {
-                foreach (ContentKindInfo info in listBox_content.Items)
-                {
-                    EpgContentData item = new EpgContentData();
-                    item.content_nibble_level_1 = info.Nibble1;
-                    item.content_nibble_level_2 = info.Nibble2;
-                    key.contentList.Add(item);
-                }
-            }
-            key.notContetFlag = (byte)(checkBox_notContent.IsChecked == true ? 1 : 0);
-
-            if (listBox_date.IsEnabled)
-            {
-                foreach (Tuple<string, EpgSearchDateInfo> info in listBox_date.Items)
-                {
-                    key.dateList.Add(info.Item2);
-                }
-            }
-            key.notDateFlag = (byte)(checkBox_notDate.IsChecked == true ? 1 : 0);
-
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                if (info.IsSelected)
-                {
-                    key.serviceList.Add((long)info.ID);
-                }
-            }
-
-            key.freeCAFlag = (byte)Math.Min(Math.Max(comboBox_free.SelectedIndex, 0), 2);
-            key.chkRecEnd = (byte)(checkBox_chkRecEnd.IsChecked == true ? 1 : 0);
-            ushort.TryParse(textBox_chkRecDay.Text, out key.chkRecDay);
-            if (checkBox_chkRecNoService.IsChecked == true)
-            {
-                key.chkRecDay = (ushort)(key.chkRecDay % 10000 + 40000);
-            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
             return key;
         }
-
-        public void SetAndKey(string andKey)
-        {
-            comboBox_andKey.Text = andKey;
-        }
-
-        public void SetServiceList(List<long> serviceList)
-        {
-            List<long> sortedServiceList = serviceList.ToList();
-            sortedServiceList.Sort();
-            ServiceItem firstSelected = null;
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                info.IsSelected = sortedServiceList.BinarySearch((long)info.ID) >= 0;
-                if (firstSelected == null && info.IsSelected)
-                {
-                    firstSelected = info;
-                }
-            }
-            if (firstSelected != null)
-            {
-                listView_service.ScrollIntoView(firstSelected);
-            }
-        }
-
         public void SetSearchKey(EpgSearchKeyInfo key)
         {
-            comboBox_andKey.Text = Regex.Replace(key.andKey, @"^(?:\^!\{999\})?(?:C!\{999\})?(?:D!\{1[0-9]{8}\})?", "");
-            comboBox_notKey.Text = Regex.Replace(key.notKey, "^:note:[^ 　]*[ 　]?", "");
-            checkBox_regExp.IsChecked = key.regExpFlag != 0;
-            checkBox_aimai.IsChecked = key.aimaiFlag != 0;
-            checkBox_titleOnly.IsChecked = key.titleOnlyFlag != 0;
-            var match = Regex.Match(key.andKey, @"^((?:\^!\{999\})?)((?:C!\{999\})?)((?:D!\{1[0-9]{8}\})?)");
-            checkBox_keyDisabled.IsChecked = match.Groups[1].Value.Length > 0;
-            checkBox_case.IsChecked = match.Groups[2].Value.Length > 0;
-            uint dur = 0;
-            if (match.Groups[3].Value.Length > 0)
+            if (key == null) return;
+            //"登録時"を追加する。既存があれば追加前に削除する。検索ダイアログの上下ボタンの移動用のコード。
+            comboBox_preSet.Items.Remove(preEdit.FindPreset(SearchPresetItem.CustomID));
+            comboBox_preSet.Items.Add(new SearchPresetItem("登録時", SearchPresetItem.CustomID, key.DeepClone()));
+            loadingSetting = true;
+            comboBox_preSet.SelectedIndex = comboBox_preSet.Items.Count - 1;
+        }
+        private bool loadingSetting = true;
+        public void UpdateView(SearchPresetItem pItem)
+        {
+            try
             {
-                dur = uint.Parse(match.Groups[3].Value.Substring(3, 9));
-            }
-            textBox_chkDurationMin.Text = (dur / 10000 % 10000).ToString();
-            textBox_chkDurationMax.Text = (dur % 10000).ToString();
-            match = Regex.Match(key.notKey, "^:note:([^ 　]*)");
-            textBox_note.Text = match.Success ? match.Groups[1].Value.Replace("\\s", " ").Replace("\\m", "　").Replace("\\\\", "\\") : "";
-
-            EnableContentListBox(true);
-            listBox_content.Items.Clear();
-            foreach (EpgContentData item in key.contentList)
-            {
-                ushort contentKey = (ushort)(item.content_nibble_level_1 << 8 | item.content_nibble_level_2);
-                ContentKindInfo info = comboBox_content.Items.Cast<ContentKindInfo>().FirstOrDefault(a => a.ID == contentKey);
-                if (info == null)
+                EpgSearchKeyInfo key = pItem.Data ?? Settings.Instance.DefSearchKey;
+                if (loadingSetting == true || checkBox_setWithoutSearchKeyWord.IsChecked == false)
                 {
-                    //未知のジャンル
-                    info = new ContentKindInfo() { Nibble1 = item.content_nibble_level_1, Nibble2 = item.content_nibble_level_2 };
+                    comboBox_andKey.Text = key.andKey;
+                    comboBox_notKey.Text = key.notKey;
                 }
-                listBox_content.Items.Add(info);
-            }
-            if (listBox_content.Items.Count == 0)
-            {
-                EnableContentListBox(false);
-            }
-            checkBox_notContent.IsChecked = key.notContetFlag != 0;
+                textBox_note.Text = key.note;
+                checkBox_regExp.IsChecked = key.regExpFlag == 1;
+                checkBox_aimai.IsChecked = key.aimaiFlag == 1;
+                checkBox_titleOnly.IsChecked = key.titleOnlyFlag == 1;
+                checkBox_case.IsChecked = key.caseFlag == 1;
+                checkBox_keyDisabled.IsChecked = key.keyDisabledFlag == 1;
 
-            EnableDateListBox(true);
-            listBox_date.Items.Clear();
-            foreach (EpgSearchDateInfo info in key.dateList)
-            {
-                listBox_date.Items.Add(new Tuple<string, EpgSearchDateInfo>(
-                    (new DateTime(2000, 1, 2 + info.startDayOfWeek % 7, info.startHour % 24, info.startMin % 60, 0)).ToString("ddd HH\\:mm") +
-                    (new DateTime(2000, 1, 2 + info.endDayOfWeek % 7, info.endHour % 24, info.endMin % 60, 0)).ToString(" ～ ddd HH\\:mm"), info));
-            }
-            if (listBox_date.Items.Count == 0)
-            {
-                EnableDateListBox(false);
-            }
-            checkBox_notDate.IsChecked = key.notDateFlag != 0;
+                listBox_content.Items.Clear();
+                key.contentList.ForEach(item => listBox_content.Items.Add(CommonManager.ContentKindInfoForDisplay(item)));
+                CheckListBox(listBox_content);
+                checkBox_notContent.IsChecked = key.notContetFlag == 1;
 
-            SetServiceList(key.serviceList);
-            comboBox_free.SelectedIndex = key.freeCAFlag % 3;
-            checkBox_chkRecEnd.IsChecked = key.chkRecEnd != 0;
-            textBox_chkRecDay.Text = (key.chkRecDay >= 40000 ? key.chkRecDay % 10000 : key.chkRecDay).ToString();
-            checkBox_chkRecNoService.IsChecked = key.chkRecDay >= 40000;
+                listBox_date.Items.Clear();
+                key.dateList.ForEach(info => listBox_date.Items.Add(new DateItem(info)));
+                CheckListBox(listBox_date);
+                checkBox_notDate.IsChecked = key.notDateFlag == 1;
+
+                var serviceKeyHash = new HashSet<long>(key.serviceList);
+                serviceList.ForEach(info => info.IsSelected = serviceKeyHash.Contains((long)info.Key));
+                Dispatcher.BeginInvoke(new Action(() => listView_service.ScrollIntoView(serviceList.Find(i => i.IsSelected == true))), System.Windows.Threading.DispatcherPriority.Loaded);
+
+                button_dttv_on.IsEnabled = serviceList.Any(item => item.ServiceInfo.IsDttv == true);
+                button_bs_on.IsEnabled = serviceList.Any(item => item.ServiceInfo.IsBS == true);
+                button_cs_on.IsEnabled = serviceList.Any(item => item.ServiceInfo.IsCS == true);
+                button_sp_on.Visibility = serviceList.Any(item => item.ServiceInfo.IsSPHD == true) ? Visibility.Visible : Visibility.Collapsed;
+                button_1seg_on.Visibility = serviceList.Any(item => item.ServiceInfo.PartialFlag == true) ? Visibility.Visible : Visibility.Collapsed;
+
+                comboBox_free.SelectedIndex = key.freeCAFlag % 3;
+                checkBox_chkRecEnd.IsChecked = key.chkRecEnd == 1;
+                textBox_chkRecDay.Text = key.chkRecDay.ToString();
+                radioButton_chkRecNoService1.IsChecked = key.chkRecNoService == 0;
+                radioButton_chkRecNoService2.IsChecked = key.chkRecNoService != 0;
+                textBox_chkDurationMin.Text = key.chkDurationMin.ToString();
+                textBox_chkDurationMax.Text = key.chkDurationMax.ToString();
+            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+            loadingSetting = false;
+        }
+
+        public void SetChangeMode(int chgMode)
+        {
+            switch (chgMode)
+            {
+                case 0:
+                    ViewUtil.SetSpecificChgAppearance(listBox_content);
+                    listBox_content.Focus();
+                    break;
+            }
+            stackPanel_PresetEdit.Visibility = chgMode == int.MaxValue ? Visibility.Collapsed : Visibility.Visible;
+            Button_clearAndKey.ToolTip = chgMode == int.MaxValue ? SearchKeyView.ClearButtonTooltip : null;
+            Button_clearNotKey.ToolTip = Button_clearAndKey.ToolTip;
+            checkBox_noArcSearch.IsEnabled = chgMode != int.MaxValue;
         }
 
         private void button_content_add_Click(object sender, RoutedEventArgs e)
         {
-            ContentKindInfo select = (ContentKindInfo)comboBox_content.SelectedItem;
-            if (select != null)
+            if (comboBox_content.SelectedItem != null)
             {
-                EnableContentListBox(true);
-                if (listBox_content.Items.Contains(select))
-                {
-                    MessageBox.Show("すでに追加されています");
-                    return;
-                }
-                listBox_content.Items.Add(select);
+                var key = (comboBox_content.SelectedItem as ContentKindInfo).Data.Key;
+                if (listBox_content.Items.OfType<ContentKindInfo>().Any(item => item.Data.Key == key) == true)
+                { return; }
+
+                listBox_content.ScrollIntoViewLast(comboBox_content.SelectedItem);
+                CheckListBox(listBox_content);
             }
         }
-
-        private void button_content_del_Click(object sender, RoutedEventArgs e)
+        private void CheckListBox(ListBox box)
         {
-            if (listBox_content.IsEnabled && listBox_content.SelectedItem != null)
+            box.Items.Remove(box.Tag);
+            box.IsEnabled = box.Items.Count != 0;
+            if (box.IsEnabled == false)
             {
-                foreach (object info in listBox_content.SelectedItems.Cast<object>().ToList())
-                {
-                    listBox_content.Items.Remove(info);
-                }
-                if (listBox_content.Items.Count == 0)
-                {
-                    EnableContentListBox(false);
-                }
+                box.Items.Add(box.Tag);
             }
-        }
-
-        private void button_date_add_Click(object sender, RoutedEventArgs e)
-        {
-            for (byte day = 0; day < 7; day++)
-            {
-                var info = new EpgSearchDateInfo();
-                info.endHour = (ushort)Math.Min(Math.Max(comboBox_time_eh.SelectedIndex, 0), 23);
-                info.endMin = (ushort)Math.Min(Math.Max(comboBox_time_em.SelectedIndex, 0), 59);
-                if (radioButton_week.IsChecked == false)
-                {
-                    info.startDayOfWeek = (byte)Math.Min(Math.Max(comboBox_time_sw.SelectedIndex, 0), 6);
-                    info.startHour = (ushort)Math.Min(Math.Max(comboBox_time_sh.SelectedIndex, 0), 23);
-                    info.startMin = (ushort)Math.Min(Math.Max(comboBox_time_sm.SelectedIndex, 0), 59);
-                    info.endDayOfWeek = (byte)Math.Min(Math.Max(comboBox_time_ew.SelectedIndex, 0), 6);
-                    day = 6;
-                }
-                else
-                {
-                    var chbox = (new CheckBox[] { checkBox_sun, checkBox_mon, checkBox_tue, checkBox_wed, checkBox_thu, checkBox_fri, checkBox_sat })[day];
-                    if (chbox.IsChecked != true)
-                    {
-                        continue;
-                    }
-                    info.startDayOfWeek = day;
-                    info.startHour = (ushort)Math.Min(Math.Max(comboBox_week_sh.SelectedIndex, 0), 23);
-                    info.startMin = (ushort)Math.Min(Math.Max(comboBox_week_sm.SelectedIndex, 0), 59);
-                    info.endDayOfWeek = info.startDayOfWeek;
-                    if (info.endHour * 60 + info.endMin < info.startHour * 60 + info.startMin)
-                    {
-                        //終了時間は翌日のものとみなす
-                        info.endDayOfWeek = (byte)((info.endDayOfWeek + 1) % 7);
-                    }
-                }
-                EnableDateListBox(true);
-                listBox_date.Items.Add(new Tuple<string, EpgSearchDateInfo>(
-                    (new DateTime(2000, 1, 2 + info.startDayOfWeek, info.startHour, info.startMin, 0)).ToString("ddd HH\\:mm") +
-                    (new DateTime(2000, 1, 2 + info.endDayOfWeek, info.endHour, info.endMin, 0)).ToString(" ～ ddd HH\\:mm"), info));
-            }
-        }
-
-        private void button_date_del_Click(object sender, RoutedEventArgs e)
-        {
-            if (listBox_date.IsEnabled && listBox_date.SelectedItem != null)
-            {
-                foreach (object info in listBox_date.SelectedItems.Cast<object>().ToList())
-                {
-                    listBox_date.Items.Remove(info);
-                }
-                if (listBox_date.Items.Count == 0)
-                {
-                    EnableDateListBox(false);
-                }
-            }
-        }
-
-        private void radioButton_time_Checked(object sender, RoutedEventArgs e)
-        {
-            SetVisibilityDateControls(false);
-        }
-
-        private void radioButton_week_Checked(object sender, RoutedEventArgs e)
-        {
-            SetVisibilityDateControls(true);
         }
 
         private void button_all_on_Click(object sender, RoutedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                info.IsSelected = true;
-            }
+            serviceList.ForEach(info => info.IsSelected = true);
         }
-
-        private void button_video_on_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                info.IsSelected = ChSet5.IsVideo(info.ServiceInfo.service_type);
-            }
-        }
-
         private void button_all_off_Click(object sender, RoutedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                info.IsSelected = false;
-            }
+            serviceList.ForEach(info => info.IsSelected = false);
         }
-
-        private void button_dttv_on_Click(object sender, RoutedEventArgs e)
+        private void button_video_on_Click(object sender, RoutedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                if (ChSet5.IsDttv(info.ServiceInfo.ONID) &&
-                    ChSet5.IsVideo(info.ServiceInfo.service_type))
-                {
-                    info.IsSelected = true;
-                }
-            }
+            serviceList.ForEach(info => info.IsSelected = info.ServiceInfo.IsVideo);
         }
-
+        private void SelectService(Func<EpgServiceInfo, bool> predicate)
+        {
+            serviceList.FindAll(info => predicate(info.ServiceInfo)).ForEach(info => info.IsSelected = true);
+        }
         private void button_bs_on_Click(object sender, RoutedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
-            {
-                if (ChSet5.IsBS(info.ServiceInfo.ONID) &&
-                    ChSet5.IsVideo(info.ServiceInfo.service_type))
-                {
-                    info.IsSelected = true;
-                }
-            }
+            SelectService(item => item.IsBS == true && item.IsVideo == true);
         }
-
         private void button_cs_on_Click(object sender, RoutedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
+            SelectService(item => item.IsCS == true && item.IsVideo == true);
+        }
+        private void button_sp_on_Click(object sender, RoutedEventArgs e)
+        {
+            SelectService(item => item.IsSPHD == true && item.IsVideo == true);
+        }
+        private void button_dttv_on_Click(object sender, RoutedEventArgs e)
+        {
+            SelectService(item => item.IsDttv == true && item.IsVideo == true);
+        }
+        private void button_1seg_on_Click(object sender, RoutedEventArgs e)
+        {
+            SelectService(item => item.IsDttv == true && item.PartialFlag == true);
+        }
+
+        private void button_date_add_Click(object sender, RoutedEventArgs e)
+        {
+            if (radioButton_week.IsChecked == false)
             {
-                if (ChSet5.IsCS(info.ServiceInfo.ONID) &&
-                    ChSet5.IsCS3(info.ServiceInfo.ONID) == false &&
-                    ChSet5.IsVideo(info.ServiceInfo.service_type))
+                var info = new EpgSearchDateInfo();
+                info.startDayOfWeek = (byte)comboBox_time_sw.SelectedIndex;
+                info.startHour = (ushort)comboBox_time_sh.SelectedIndex;
+                info.startMin = (ushort)comboBox_time_sm.SelectedIndex;
+                info.endDayOfWeek = (byte)comboBox_time_ew.SelectedIndex;
+                info.endHour = (ushort)comboBox_time_eh.SelectedIndex;
+                info.endMin = (ushort)comboBox_time_em.SelectedIndex;
+                listBox_date.ScrollIntoViewLast(new DateItem(info));
+            }
+            else
+            {
+                listBox_date.ScrollIntoViewLast(chbxWeekList.Where(box => box.IsChecked == true).Select(box =>
                 {
-                    info.IsSelected = true;
-                }
+                    var info = new EpgSearchDateInfo();
+                    info.startDayOfWeek = info.endDayOfWeek = (byte)box.Tag;
+                    info.startHour = (ushort)comboBox_week_sh.SelectedIndex;
+                    info.startMin = (ushort)comboBox_week_sm.SelectedIndex;
+                    info.endHour = (ushort)comboBox_week_eh.SelectedIndex;
+                    info.endMin = (ushort)comboBox_week_em.SelectedIndex;
+                    info.RegulateData();
+                    return new DateItem(info);
+                }));
             }
+            CheckListBox(listBox_date);
         }
 
-        private void button_cs3_on_Click(object sender, RoutedEventArgs e)
+        private void comboBox_content_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            foreach (ServiceItem info in listView_service.Items)
+            if (comboBox_content.IsDropDownOpen)
             {
-                if (ChSet5.IsCS3(info.ServiceInfo.ONID) &&
-                    ChSet5.IsVideo(info.ServiceInfo.service_type))
-                {
-                    info.IsSelected = true;
-                }
+                button_content_add_Click(null, null);
             }
         }
 
-        private void SetVisibilityDateControls(bool isWeek)
+        private void checkBox_setWithoutSearchKeyWord_Click(object sender, RoutedEventArgs e)
         {
-            Visibility timeVis = isWeek ? Visibility.Hidden : Visibility.Visible;
-            Visibility weekVis = isWeek ? Visibility.Visible : Visibility.Hidden;
-            comboBox_time_sw.Visibility = timeVis;
-            comboBox_time_sh.Visibility = timeVis;
-            comboBox_time_sm.Visibility = timeVis;
-            comboBox_time_dash.Visibility = timeVis;
-            comboBox_time_ew.Visibility = timeVis;
-            checkBox_sun.Visibility = weekVis;
-            checkBox_mon.Visibility = weekVis;
-            checkBox_tue.Visibility = weekVis;
-            checkBox_wed.Visibility = weekVis;
-            checkBox_thu.Visibility = weekVis;
-            checkBox_fri.Visibility = weekVis;
-            checkBox_sat.Visibility = weekVis;
-            comboBox_week_sh.Visibility = weekVis;
-            comboBox_week_sm.Visibility = weekVis;
-            comboBox_week_dash.Visibility = weekVis;
+            //これはダイアログの設定なので即座に反映
+            Settings.Instance.SetWithoutSearchKeyWord = (checkBox_setWithoutSearchKeyWord.IsChecked == true);
         }
 
-        private void EnableContentListBox(bool isEnabled)
+        private class DateItem
         {
-            if (listBox_content.IsEnabled != isEnabled)
-            {
-                listBox_content.Items.Clear();
-                listBox_content.IsEnabled = isEnabled;
-                checkBox_notContent.IsEnabled = isEnabled;
-                if (isEnabled == false)
-                {
-                    //"(全ジャンル)"表示用の特殊値
-                    listBox_content.Items.Add(new ContentKindInfo() { Nibble1 = 0xFE, Nibble2 = 0xFF });
-                }
-            }
-        }
-
-        private void EnableDateListBox(bool isEnabled)
-        {
-            if (listBox_date.IsEnabled != isEnabled)
-            {
-                listBox_date.Items.Clear();
-                listBox_date.IsEnabled = isEnabled;
-                checkBox_notDate.IsEnabled = isEnabled;
-                if (isEnabled == false)
-                {
-                    listBox_date.Items.Add(new Tuple<string, EpgSearchDateInfo>("(全期間)", null));
-                }
-            }
-        }
-
-        private void comboBox_andKey_KeyUp(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Delete && comboBox_andKey.IsDropDownOpen)
-            {
-                int i = comboBox_andKey.SelectedIndex;
-                if (i >= 0)
-                {
-                    comboBox_andKey.Items.RemoveAt(i);
-                    comboBox_andKey.SelectedIndex = Math.Min(i, comboBox_andKey.Items.Count - 1);
-                    SaveSearchLogSettings();
-                }
-            }
-        }
-
-        private void comboBox_notKey_KeyUp(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Delete && comboBox_notKey.IsDropDownOpen)
-            {
-                int i = comboBox_notKey.SelectedIndex;
-                if (i >= 0)
-                {
-                    comboBox_notKey.Items.RemoveAt(i);
-                    comboBox_notKey.SelectedIndex = Math.Min(i, comboBox_notKey.Items.Count - 1);
-                    SaveSearchLogSettings();
-                }
-            }
-        }
-
-        private void comboBox_notKey_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            Settings.Instance.SearchWndNotKeyRatio =
-                columnDefinition_notKey.ActualWidth / (columnDefinition_notKey.ActualWidth + columnDefinition_note.ActualWidth);
-        }
-
-        private void SaveSearchLogSettings()
-        {
-            Settings.Instance.AndKeyList.Clear();
-            for (int i = 0; i < 30 && i < comboBox_andKey.Items.Count; i++)
-            {
-                Settings.Instance.AndKeyList.Add((string)comboBox_andKey.Items[i]);
-            }
-            Settings.Instance.NotKeyList.Clear();
-            for (int i = 0; i < 30 && i < comboBox_notKey.Items.Count; i++)
-            {
-                Settings.Instance.NotKeyList.Add((string)comboBox_notKey.Items[i]);
-            }
-            Settings.SaveToXmlFile();
+            public DateItem(EpgSearchDateInfo info) { DateInfo = info; }
+            public EpgSearchDateInfo DateInfo { get; private set; }
+            public override string ToString() { return CommonManager.ConvertTimeText(DateInfo); }
         }
     }
 }

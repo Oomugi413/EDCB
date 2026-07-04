@@ -121,7 +121,7 @@ namespace EpgTimer
             catch (Exception ex)
             {
                 MessageBox.Show(ex.ToString());
-            }
+            } 
             return true;
         }
 
@@ -212,7 +212,7 @@ namespace EpgTimer
             catch (Exception ex)
             {
                 MessageBox.Show(ex.ToString());
-            }
+            } 
             return true;
         }
 
