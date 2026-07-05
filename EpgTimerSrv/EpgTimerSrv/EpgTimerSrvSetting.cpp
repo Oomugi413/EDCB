@@ -134,6 +134,10 @@ CEpgTimerSrvSetting::SETTING CEpgTimerSrvSetting::LoadSetting(LPCWSTR iniPath)
 	s.retryOtherTuners = GetPrivateProfileInt(L"SET", L"RetryOtherTuners", 0, iniPath) != 0;
 	s.separateFixedTuners = GetPrivateProfileInt(L"SET", L"SeparateFixedTuners", 0, iniPath) != 0;
 	s.commentAutoAdd = GetPrivateProfileInt(L"SET", L"CommentAutoAdd", 0, iniPath) != 0;
+	s.syncResAutoAddChange = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChange", 0, iniPath) != 0;
+	s.syncResAutoAddDelete = GetPrivateProfileInt(L"SET", L"SyncResAutoAddDelete", 0, iniPath) != 0;
+	s.syncResAutoAddChgNewRes = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChgNewRes", 0, iniPath) != 0;
+	s.syncResAutoAddChgKeepRecTag = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChgKeepRecTag", 0, iniPath) != 0;
 	s.fixNoRecToServiceOnly = GetPrivateProfileInt(L"SET", L"FixNoRecToServiceOnly", 0, iniPath) != 0;
 	s.autoDelRecInfo = GetPrivateProfileInt(L"SET", L"AutoDelRecInfo", 0, iniPath) != 0;
 	s.autoDelRecInfoNum = GetPrivateProfileInt(L"SET", L"AutoDelRecInfoNum", 100, iniPath);
