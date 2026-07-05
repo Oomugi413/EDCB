@@ -300,22 +300,38 @@ th, td {
   color: var(--light, #000) var(--dark, inherit);
 }
 
+.logo {
+  max-height: 0.9em;
+  width: auto;
+}
+
+.epg-table-ancestor {
+  height: 100%;
+  margin: 0;
+}
+
+div.epg-table-ancestor {
+  overflow-y: scroll;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 .epg-table {
   border: 0;
   border-spacing: 0;
 }
 
-.epg-row-head > th {
+th.epg-row-head {
+  background: var(--light, #eee) var(--dark, #400);
   border: 1px solid #aaa;
-  vertical-align: bottom;
-}
-
-.epg-row-tail > th {
-  border: 1px solid #aaa;
+  font-size: small;
+  position: sticky;
+  top: 0;
   vertical-align: top;
+  z-index: 1;
 }
 
-.epg-row-head > td, .epg-row-tail > td {
+td.epg-row-head {
   border: 0;
 }
 
@@ -387,7 +403,7 @@ th, td {
   border-width: 1px 0;
   box-sizing: border-box;
   color: var(--light, #000) var(--dark, inherit);
-  overflow: auto;
+  overflow: hidden;
   position: absolute;
 }
 
@@ -519,30 +535,33 @@ th, td {
   position: absolute;
 }
 
-.thumbs-1 > canvas, .thumbs-2 > canvas {
+.thumb-placeholder {
   aspect-ratio: 16 / 9;
+  display: inline-block;
   width: 50%;
 }
 
-.thumbs-3 > canvas {
-  aspect-ratio: 16 / 9;
+.thumbs-3 > .thumb-placeholder {
   width: 33.3%;
 }
 
-.thumbs-4 > canvas {
-  aspect-ratio: 16 / 9;
+.thumbs-4 > .thumb-placeholder {
   width: 25%;
 }
 
-.thumbs-5 > canvas {
-  aspect-ratio: 16 / 9;
+.thumbs-5 > .thumb-placeholder {
   width: 20%;
 }
 
 @media (max-width: 479px) {
-  .thumbs-3 > canvas, .thumbs-4 > canvas, .thumbs-5 > canvas {
+  .thumbs-3 > .thumb-placeholder, .thumbs-4 > .thumb-placeholder, .thumbs-5 > .thumb-placeholder {
     width: 50%;
   }
+}
+
+.thumb-placeholder > canvas {
+  height: 100%;
+  width: 100%;
 }
 
 .video-container {

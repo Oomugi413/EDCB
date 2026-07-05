@@ -35,6 +35,7 @@ PROCESS_MANAGEMENT_LIST={
 RESERVE_PAGE_COUNT=50
 RECINFO_PAGE_COUNT=50
 AUTOADDEPG_PAGE_COUNT=50
+AUTOADDEPGINFO_PAGE_COUNT=100
 
 --リスト番組表の非表示にしたいサービス
 HIDE_SERVICES={
@@ -50,7 +51,7 @@ EPG_MINIMUM_PX=12
 EPG_SERVICE_PX=150
 --番組表の時刻軸を入れる間隔
 EPG_TIME_COLUMN=3
---番組表の番組を絞り込みたいときはメモ欄かNOTキーワードの先頭を"#EPG_CUST_1"にした自動EPG予約を作る
+--番組表の番組を絞り込みたいときはメモ欄の先頭を"#EPG_CUST_1"～"#EPG_CUST_9"にした自動EPG予約を作る
 
 --ライブラリに表示するフォルダをドキュメントルートから'/'区切りの相対パスで指定
 --指定フォルダとその3階層下のフォルダにあるメディアファイルまでが表示対象
@@ -66,14 +67,14 @@ MEDIA_EXTENSION_LIST={
 }
 
 --メディアファイルのサムネイル画像の位置(0～1未満の値は割合、これ以外の正の値は秒数、負の値は末尾からの秒数)
---最大5個。今のところTSファイルのみ対応。TS-Live!モジュールが必要
+--最大5個。今のところTSファイルのみ対応
 THUMBNAILS={
   20,
   1/3,
   -20,
 }
 
---シーク中にサムネイル画像を表示するかどうか。TS-Live!モジュールが必要
+--シーク中にサムネイル画像を表示するかどうか
 THUMBNAIL_ON_SEEK=true
 
 --HLS(HTTP Live Streaming)を許可するかどうか。する場合はtsmemseg.exeを用意すること
@@ -180,7 +181,7 @@ XCODE_OPTIONS={
     --NVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/NVEncC',
     xcoder='NVEncC\\NVEncC64.exe|NVEncC\\NVEncC.exe|NVEncC64.exe|nvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -197,7 +198,7 @@ XCODE_OPTIONS={
     --QSVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -214,7 +215,7 @@ XCODE_OPTIONS={
     --QSVEncCの例。HEVC(未対応環境多め)。倍速再生にはffmpegも必要
     name='720p/hevc/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
     filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
@@ -231,7 +232,7 @@ XCODE_OPTIONS={
     --VCEEncCの例。倍速再生にはffmpegも必要。あまり良い例ではない。ffmpegのh264_amfのほうが安定している雰囲気
     name='720p/h264/VCEEncC',
     xcoder='VCEEncC\\VCEEncC64.exe|VCEEncC\\VCEEncC.exe|VCEEncC64.exe|vceencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avsw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset balanced $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avsw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset balanced $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
     filter='--gop-len 120 --interlace tff --vpp-afs preset=default',
     filterCinema='--gop-len 96 --interlace tff --vpp-afs preset=cinema,24fps=true',
@@ -310,11 +311,15 @@ NVRAM_ZIP=''
 NVRAM_REGION=0
 
 --ライブ実況表示機能を使うかどうか
---利用にはJKCNSL_PATHを設定するか、実況を扱うツール側の対応(NicoJKの場合はcommentShareMode)が必要
+--利用にはJKCNSL_PATHを設定するか、実況を扱うツール側の対応(Windows(NicoJK)ではcommentShareMode、Windows以外ではjktaskの起動)が必要
 USE_LIVEJK=true
+
+--jktaskの設定ファイルなどが置かれている場所(通常、変更不要)
+JKTASK_BASE_DIR='/var/local/jktask'
 
 --jkcnslを直接呼び出してライブ実況する場合、その絶対パス。Windows以外ではコマンド名
 --コメント投稿したい場合はあらかじめjkcnsl側でログインしておく(jkcnslのReadmeを参照)
+--実況を扱うツール(NicoJKやjktask)とコメント共有する場合は変更不要
 JKCNSL_PATH=nil
 --JKCNSL_PATH='C:\\Path\\to\\jkcnsl.exe' --Windows
 --JKCNSL_PATH='jkcnsl' --Windows以外
@@ -538,7 +543,7 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
   local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
   local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
   return [=[
-<script type="text/javascript" src="script.js?ver=20260305" defer></script>
+<script type="text/javascript" src="script.js?ver=20260626" defer></script>
 ]=]..(USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
@@ -612,7 +617,7 @@ end
 
 function ThumbnailTemplate(f,dur,fsize,fname)
   --戻り値の配列の先頭は描画目標になるタグ、以降はスクリプト
-  local r={'<div id="vid-thumbs" class="thumbs-'..math.min(#THUMBNAILS,5)..'"'..(fname and ' data-fname="'..fname..'"' or '')..'></div>',[=[
+  local r={'<div id="vid-thumbs" class="thumbs-'..math.min(#THUMBNAILS,5)..'"'..(fname and ' data-fname="'..fname..'"' or '')..'>',[=[
 <script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>
 <script type="application/json" id="vid-thumb-streams">
 [
@@ -623,12 +628,14 @@ function ThumbnailTemplate(f,dur,fsize,fname)
       --Iフレームを取得してスクリプト上に置いておく
       local stream=GetIFrameVideoStream(f)
       if stream then
+        r[1]=r[1]..'<span class="thumb-placeholder"></span>'
         r[#r+1]=mg.base64_encode(stream)
         r[#r+1]='",'..sec..'],\n  ["'
       end
     end
   end
   if #r<=2 then return {''} end
+  r[1]=r[1]..'</div>'
   r[#r]=r[#r]:gsub('].*','')..[=[]
 ]
 </script>
@@ -1123,6 +1130,9 @@ function CompareFields(...)
   return comp
 end
 
+--時間テーブルを比較する
+CompareTime=CompareFields('year',false,'month',false,'day',false,'hour',false,'min',false,'sec')
+
 --符号なし整数の時計算の差を計算する
 function UintCounterDiff(a,b)
   return (a+0x100000000-b)%0x100000000
@@ -1407,50 +1417,49 @@ function TestVttKind(path)
   return r
 end
 
---MP4のBoxの位置を探す
-function FindMP4BoxPosition(f,path,currentBoxPos)
-  local i=tonumber(path:match('^....([0-9]+)'))
-  if not i or currentBoxPos>=0 and not f:seek('set',currentBoxPos) then return nil end
+--MP4のBoxを探す
+function FindMP4Box(f,path,current)
+  local pos,size=math.abs(current.pos),current.size or 1e12
+  if #path<4 or size<8 or current.pos>=0 and not f:seek('set',pos) then return nil end
   repeat
     local head=f:read(8)
     if not head or #head~=8 then break end
     local boxSize=GetBeNumber(head,1,4)
     if boxSize==1 then
       --64bit形式
-      head=head..(f:read(8) or '')
+      head=head..(size>=16 and f:read(8) or '')
       if #head~=16 then break end
       boxSize=GetBeNumber(head,9,8)
     end
-    if boxSize<#head then break end
+    if boxSize<#head or boxSize>size then break end
     if path:sub(1,4)==head:sub(5,8) then
-      i=i-1
-      if i<0 then
-        if path:find('^....[0-9]+$') then return f:seek(),boxSize-#head end
-        return FindMP4BoxPosition(f,path:match('^....[0-9]+.(.*)$'),-1)
-      end
+      if #path==4 then return {pos=pos+#head,size=boxSize-#head} end
+      return FindMP4Box(f,path:sub(6),{pos=-pos-#head,size=boxSize-#head})
     end
-  until not f:seek('cur',boxSize-#head)
+    pos=pos+boxSize
+    size=size-boxSize
+  until size<8 or not f:seek('cur',boxSize-#head)
   return nil
 end
 
 --MP4のBoxを読む
-function ReadMP4Box(f,path,currentBoxPos)
-  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
-  if pos and size<1024*1024 then
-    local data=f:read(size)
-    if data and #data==size then return data end
+function ReadMP4Box(f,path,current)
+  local found=FindMP4Box(f,path,current)
+  if found and found.size<1024*1024 then
+    local data=f:read(found.size)
+    if data and #data==found.size then return data end
   end
   return nil
 end
 
 --MP4のFullBoxを読む
-function ReadMP4FullBox(f,path,currentBoxPos)
-  local pos,size=FindMP4BoxPosition(f,path,currentBoxPos)
-  if pos and size>=4 and size<1024*1024 then
+function ReadMP4FullBox(f,path,current,maxVer)
+  local found=FindMP4Box(f,path,current)
+  if found and found.size>=4 and found.size<1024*1024 then
     local head=f:read(4)
-    if head and #head==4 then
-      local data=f:read(size-4)
-      if data and #data==size-4 then return data,head:byte(1),GetBeNumber(head,2,3) end
+    if head and #head==4 and head:byte(1)<=(maxVer or 0) then
+      local data=f:read(found.size-4)
+      if data and #data==found.size-4 then return data,head:byte(1),GetBeNumber(head,2,3) end
     end
   end
   return nil
@@ -1531,27 +1540,29 @@ function LoadAttachedChapters(path)
       end
       return r
     end
-    local moov=FindMP4BoxPosition(f,'moov0',0)
+    local moov=FindMP4Box(f,'moov',{pos=0})
     if not moov then return nil end
+    local trak={pos=moov.pos,size=0}
     local scale,stbl
     for i=0,99 do
-      local trak=FindMP4BoxPosition(f,'trak'..i,moov)
+      trak=FindMP4Box(f,'trak',{pos=trak.pos+trak.size,size=moov.pos+moov.size-trak.pos-trak.size})
       if not trak then break end
-      local chap=ReadMP4Box(f,'tref0/chap0',trak)
+      local chap=ReadMP4Box(f,'tref/chap',trak)
       if chap and #chap>=4 then
         local trackID=GetBeNumber(chap,1,4)
+        trak={pos=moov.pos,size=0}
         for j=0,99 do
-          trak=FindMP4BoxPosition(f,'trak'..j,moov)
+          trak=FindMP4Box(f,'trak',{pos=trak.pos+trak.size,size=moov.pos+moov.size-trak.pos-trak.size})
           if not trak then break end
-          local tkhd,ver=ReadMP4FullBox(f,'tkhd0',trak)
+          local tkhd,ver=ReadMP4FullBox(f,'tkhd',trak,1)
           if tkhd and #tkhd>=(ver==1 and 20 or 12) and trackID==GetBeNumber(tkhd,ver==1 and 17 or 9,4) then
-            local mdia=FindMP4BoxPosition(f,'mdia0',trak)
+            local mdia=FindMP4Box(f,'mdia',trak)
             if mdia then
-              local mdhd,ver=ReadMP4FullBox(f,'mdhd0',mdia)
-              local hdlr=ReadMP4FullBox(f,'hdlr0',mdia)
+              local mdhd,ver=ReadMP4FullBox(f,'mdhd',mdia,1)
+              local hdlr=ReadMP4FullBox(f,'hdlr',mdia)
               if mdhd and #mdhd>=(ver==1 and 20 or 12) and hdlr and hdlr:find('^....text') then
                 scale=GetBeNumber(mdhd,ver==1 and 17 or 9,4)
-                stbl=FindMP4BoxPosition(f,'minf0/stbl0',mdia)
+                stbl=FindMP4Box(f,'minf/stbl',mdia)
               end
             end
             break
@@ -1561,20 +1572,20 @@ function LoadAttachedChapters(path)
       end
     end
     if not stbl or scale==0 then return nil end
-    local stco=ReadMP4FullBox(f,'co640',stbl)
+    local stco=ReadMP4FullBox(f,'co64',stbl)
     stco=stco and parseEntry(stco,1,8,GetBeNumber) or
-      not stco and parseEntry(ReadMP4FullBox(f,'stco0',stbl) or {},1,4,GetBeNumber)
+      not stco and parseEntry(ReadMP4FullBox(f,'stco',stbl) or {},1,4,GetBeNumber)
     local sampleSize
-    local stsz=ReadMP4FullBox(f,'stsz0',stbl)
+    local stsz=ReadMP4FullBox(f,'stsz',stbl)
     if stsz then
       sampleSize=#stsz>=8 and GetBeNumber(stsz,1,4) or 0
       sampleSize=sampleSize>0 and sampleSize
       stsz=sampleSize and GetBeNumber(stsz,5,4) or parseEntry(stsz,5,4,GetBeNumber)
     end
-    local stsc=parseEntry(ReadMP4FullBox(f,'stsc0',stbl) or {},1,12,function(data,pos) return {
+    local stsc=parseEntry(ReadMP4FullBox(f,'stsc',stbl) or {},1,12,function(data,pos) return {
       first=GetBeNumber(data,pos,4),samples=GetBeNumber(data,pos+4,4)
     } end)
-    local stts=parseEntry(ReadMP4FullBox(f,'stts0',stbl) or {},1,8,function(data,pos) return {
+    local stts=parseEntry(ReadMP4FullBox(f,'stts',stbl) or {},1,8,function(data,pos) return {
       count=GetBeNumber(data,pos,4),delta=GetBeNumber(data,pos+4,4)
     } end)
     local r={}
@@ -1623,14 +1634,14 @@ function LoadAttachedChapters(path)
   end
   for ext in CHAPTER_EXTENSIONS:gmatch('[^|]+') do
     for i,dir in ipairs(CHAPTERS_FOLDER_NAME=='' and {''} or {'%1'..CHAPTERS_FOLDER_NAME:gsub('%%','%%%%'),''}) do
-      if not IsEqualPath(ext,'.m4a') and not IsEqualPath(ext,'.mp4') then
+      if ext:lower()~='.m4a' and ext:lower()~='.mp4' then
         local f=ext:find('^%.') and edcb.io.open(path:gsub('(['..DIR_SEPS..'])([^'..DIR_SEPS..']*)$',dir..'%1%2'):gsub('%.[0-9A-Za-z]+$','')..ext,'rb')
         if f then
           local src=(f:seek('end') or math.huge)<1024*1024 and f:seek('set') and f:read('*a')
           f:close()
-          return src and (IsEqualPath(ext,'.chapter') and parseTvt or parseOgm)(src) or nil
+          return src and (ext:lower()=='.chapter' and parseTvt or parseOgm)(src) or nil
         end
-      elseif dir=='' and #path>#ext and IsEqualPath(path:sub(-#ext),ext) then
+      elseif dir=='' and #path>#ext and path:sub(-#ext):lower()==ext:lower() then
         local f=edcb.io.open(path,'rb')
         if f then
           local r=parseMP4(f)
@@ -1652,7 +1663,7 @@ function DefaultHeadContents()
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
-<script type="text/javascript" src="common.js?ver=20260305" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
+<script type="text/javascript" src="common.js?ver=20260507" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
 <link rel="stylesheet" type="text/css" href="default.css">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')
@@ -1786,23 +1797,26 @@ function GetVarPastEventID(qs,n,occ)
 end
 
 --CSRFトークンを取得する
---※このトークンを含んだコンテンツを圧縮する場合はBREACH攻撃に少し気を配る
-function CsrfToken(m,t)
-  --メッセージに時刻をつける
-  m=(m or mg.script_name:match('[^\\/]*$'):lower())..'/legacy/'..(math.floor(os.time()/3600/12)+(t or 0))
+function CsrfToken(m,t,s)
+  --メッセージに時刻をつける。saltはBREACH攻撃対策のため
+  local salt=shared.csrfSalt or '00000000'
+  m=(m or mg.script_name:match('[^\\/]*$'):lower())..'/legacy/'..(math.floor(os.time()/3600/12)+(t or 0))..'/'..(s or salt)
   local kip,kop=('\54'):rep(48),('\92'):rep(48)
   for k in edcb.serverRandom:sub(1,32):gmatch('..') do
     kip=string.char(bit32.bxor(tonumber(k,16),54))..kip
     kop=string.char(bit32.bxor(tonumber(k,16),92))..kop
   end
   --HMAC-MD5(hex)
-  return mg.md5(kop..mg.md5(kip..m))
+  m=mg.md5(kop..mg.md5(kip..m))
+  if not s then shared.csrfSalt=m:sub(1,8) end
+  return (s or salt)..m:sub(9)
 end
 
 --CSRFトークンを検査する
 --※サーバに変更を加える要求(POSTに限らない)を処理する前にこれを呼ぶべき
 function AssertCsrf(qs)
-  assert(mg.get_var(qs,'ctok')==CsrfToken() or mg.get_var(qs,'ctok')==CsrfToken(nil,-1))
+  local ctok=mg.get_var(qs,'ctok')
+  assert(ctok and #ctok>=8 and (ctok==CsrfToken(nil,0,ctok:sub(1,8)) or ctok==CsrfToken(nil,-1,ctok:sub(1,8))))
 end
 
 --県域コード(1～50)に対応する緊急情報信号の地域符号を返す
@@ -1810,9 +1824,4 @@ function GetEwsRegionCode(prefecture)
   --地域符号(Hex3桁x50)
   local codes='16b16b4675d4758ac6e4c1aec69e3898b64b1c7aac56c4ce5396a692dd4a9d2a65a5a9662dcce459acb2674a93396d2331b2b5b31b98e629b419d2e362d959a2b8a7c8dd1cd45372aacd45'
   return tonumber(codes:sub(prefecture*3-2,prefecture*3),16)
-end
-
-if not WIN32 then
-  INDEX_ENABLE_SUSPEND=false
-  USE_LIVEJK=not not JKCNSL_PATH
 end

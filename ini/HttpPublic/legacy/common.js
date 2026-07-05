@@ -284,7 +284,7 @@ if(window.addEventListener)window.addEventListener("DOMContentLoaded",function()
             canvas.width=frame.width;
             canvas.height=frame.height;
             canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(frame.buffer),frame.width,frame.height),0,0);
-            thumbs.appendChild(canvas);
+            document.getElementsByClassName("thumb-placeholder")[i].appendChild(canvas);
           })();
         }
       });
