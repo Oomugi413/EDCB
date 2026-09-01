@@ -81,10 +81,8 @@ THUMBNAIL_ON_SEEK=true
 ALLOW_HLS=true
 --ネイティブHLS非対応環境でもhls.jsを使ってHLS再生するかどうか
 ALWAYS_USE_HLS=true
---HLS再生時にトランスコーダーから受け取ったMPEG2-TSをMP4に変換するかどうか。有効時はHEVCトランスコードに対応
---※Android版Firefoxでは不具合があるため無効扱いになる
-USE_MP4_HLS=true
 --視聴機能(viewボタン)でLowLatencyHLSにするかどうか。再生遅延が小さくなる。ネイティブHLS環境ではHTTP/2が要求されるためhls.js使用時のみ有用
+--※Android版Firefoxでは不具合があるため無効扱いになる
 USE_MP4_LLHLS=true
 
 --倍速再生の倍率のリスト
@@ -543,7 +541,7 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
   local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
   local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
   return [=[
-<script type="text/javascript" src="script.js?ver=20260626" defer></script>
+<script type="text/javascript" src="script.js?ver=20260824" defer></script>
 ]=]..(USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
@@ -1663,7 +1661,7 @@ function DefaultHeadContents()
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
-<script type="text/javascript" src="common.js?ver=20260507" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
+<script type="text/javascript" src="common.js?ver=20260824" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
 <link rel="stylesheet" type="text/css" href="default.css">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')
