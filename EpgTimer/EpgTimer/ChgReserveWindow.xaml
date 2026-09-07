@@ -1,67 +1,92 @@
-﻿<Window x:Class="EpgTimer.ChgReserveWindow"
+﻿<local:ChgReserveWindowBase x:Class="EpgTimer.ChgReserveWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:my="clr-namespace:EpgTimer"
-        SizeToContent="Height" Style="{StaticResource AppWindowStyle}" Title="プログラム予約追加" Width="{StaticResource AppRecSettingWindowWidth}" WindowStartupLocation="CenterOwner" Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown">
+        xmlns:local="clr-namespace:EpgTimer"
+        Title="予約変更" Height="580" Width="740" >
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="auto" />
         </Grid.RowDefinitions>
-        <TabControl Name="tabControl" TabStripPlacement="Bottom">
-            <TabItem Header="予約">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Top" Margin="{StaticResource AppEdgeMarginLTR}">
-                        <CheckBox Content="プログラム予約化（一度プログラム予約化したものは元に戻せません。番組を特定できなくなるため追従もできません。）" HorizontalAlignment="Left" IsChecked="True" IsEnabled="False" Name="checkBox_program" Style="{StaticResource AppCheckBoxStyle}" Click="checkBox_program_Click" />
-                        <Grid Margin="{StaticResource AppWideMarginT}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Label Content="サービス" Style="{StaticResource AppTermLabelStyle}" />
-                            <ComboBox Grid.Column="1" IsEnabled="{Binding IsChecked, ElementName=checkBox_program}" Margin="{StaticResource AppWideMarginR}" Name="comboBox_service" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=stackPanel_start}" />
-                            <Label Content="番組名" Grid.Column="2" Style="{StaticResource AppTermLabelStyle}" />
-                            <TextBox Grid.Column="3" IsEnabled="{Binding IsChecked, ElementName=checkBox_program}" Name="textBox_title" Style="{StaticResource AppTextBoxStyle}" />
-                            <FrameworkElement Grid.Row="1" Margin="{StaticResource AppMarginT}" />
-                            <Label Content="開始日時" Grid.Row="2" Style="{StaticResource AppTermLabelStyle}" />
-                            <DatePicker Grid.Column="1" Grid.Row="2" HorizontalAlignment="Left" Name="datePicker_ref" SelectedDate="2000/12/30" Visibility="Hidden" />
-                            <ComboBox Grid.Column="1" Grid.Row="2" HorizontalAlignment="Left" Name="comboBox_hms_ref" SelectedIndex="0" Style="{StaticResource AppComboBoxStyle}" Visibility="Hidden">
-                                <ComboBoxItem Content="88" />
-                            </ComboBox>
-                            <StackPanel Grid.Column="1" Grid.Row="2" IsEnabled="{Binding IsChecked, ElementName=checkBox_program}" Margin="{StaticResource AppWideMarginR}" Name="stackPanel_start" Orientation="Horizontal">
-                                <DatePicker Name="datePicker_start" Width="{Binding ActualWidth, ElementName=datePicker_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_sh" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_sm" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_ss" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                            </StackPanel>
-                            <Label Content="終了日時" Grid.Column="2" Grid.Row="2" Style="{StaticResource AppTermLabelStyle}" />
-                            <StackPanel Grid.Column="3" Grid.Row="2" IsEnabled="{Binding IsChecked, ElementName=checkBox_program}" Orientation="Horizontal">
-                                <DatePicker Name="datePicker_end" Width="{Binding ActualWidth, ElementName=datePicker_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_eh" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_em" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                                <ComboBox Margin="{StaticResource AppMarginL}" Name="comboBox_es" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                    <my:RecSettingView Margin="{StaticResource AppWideMarginT}" x:Name="recSettingView" />
-                </DockPanel>
+        <TabControl Name="tabControl" TabStripPlacement="Bottom" SelectionChanged="tabControl_SelectionChanged" >
+            <TabItem Header="番組詳細" Name="tabItem_program" >
+                <RichTextBox Name="richTextBox_descInfo" IsReadOnly="True" VerticalScrollBarVisibility="Auto" />
             </TabItem>
-            <TabItem Header="番組詳細">
-                <RichTextBox IsReadOnly="True" IsReadOnlyCaretVisible="True" Name="richTextBox_descInfo" Style="{StaticResource AppRichTextBoxStyle}" VerticalScrollBarVisibility="Auto" />
+            <TabItem>
+                <TabItem.Header>
+                    <TextBlock Text="予約" Name="reserveTabHeader" Margin="-8,-3" Padding="8,3"/>
+                </TabItem.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Margin="12,6,6,6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="auto" />
+                            <RowDefinition Height="auto" />
+                            <RowDefinition Height="auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="auto" />
+                            <ColumnDefinition Width="auto" />
+                            <ColumnDefinition Width="auto" />
+                            <ColumnDefinition Width="auto" />
+                            <ColumnDefinition Width="auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Grid.ColumnSpan="6" >
+                            <RadioButton Content="EPG予約" Name="radioButton_Epg" ToolTip="EPG予約に戻す場合、指定日時と放映時間が重複する番組で、開始日時の最も近いものが選択されます。" Click="radioButton_Epg_Click" />
+                            <RadioButton Content="プログラム予約" Margin="12,0,0,0" Name="radioButton_Program" Click="radioButton_Program_Click" ToolTip="プログラム予約では「追従機能」「ぴったり録画機能」は使用できません。"/>
+                            <StackPanel Name="stack_Status" Orientation="Horizontal" >
+                                <CheckBox Content="自動予約登録を解除する" Margin="30,0,20,0" Name="checkBox_releaseAutoAdd" ToolTip="個別予約に変更し、「自動予約登録の変更・削除に合わせて予約を変更・削除する」オプションの対象から外します。&#10;＊「自動予約登録を見失った予約を強調表示する」オプションの対象からも外れます。&#10;＊右クリックメニュー「変更」から戻せます。" IsEnabled="False" />
+                                <Label Content="予約状況:" ToolTip="予約を開いた時点での予約状況" />
+                                <ComboBox Name="text_Status" MinWidth="200"/>
+                                <Label Name="label_errStar" Content="{}" Foreground="OrangeRed" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Label Content="番組名" Grid.Row="1" />
+                        <local:TextBoxWithReadOnlyEffect Height="24" Grid.Row="1" Grid.Column="1" x:Name="textBox_title"  Margin="0,3" Width="259" IsReadOnly="{Binding IsChecked, ElementName=radioButton_Epg}"/>
+                        <Label Content="サービス" Grid.Row="1" Grid.Column="3" Margin="18,0,6,0" />
+                        <ComboBox Height="24" Grid.Row="1" Grid.Column="4" Name="comboBox_service" Width="259" IsEnabled="{Binding IsChecked, ElementName=radioButton_Program}" />
+                        <Label Content="開始日時" Grid.Row="2" Margin="0,0,6,0" />
+                        <StackPanel Orientation="Horizontal" Grid.Row="2" Grid.Column="1" Name="stack_start" IsEnabled="{Binding IsChecked, ElementName=radioButton_Program}">
+                            <DatePicker Height="24" Name="datePicker_start" VerticalAlignment="Center" Width="115" Margin="0,0,3,0" SelectedDateFormat="Short" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_sh" Width="44" IsEditable="True" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_sm" Width="44" IsEditable="True" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_ss" Width="44" IsEditable="True" />
+                        </StackPanel>
+                        <Label Content="終了日時" Grid.Row="2" Grid.Column="3" Margin="18,0,6,0" />
+                        <StackPanel Orientation="Horizontal" Grid.Row="2" Grid.Column="4" Name="stack_end" IsEnabled="{Binding IsChecked, ElementName=radioButton_Program}">
+                            <DatePicker Height="25" Name="datePicker_end" VerticalAlignment="Center" Width="115" Margin="0,0,3,0" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_eh" Width="44" IsEditable="True" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_em" Width="44" IsEditable="True" />
+                            <ComboBox Height="24" Margin="3,0,0,0" Name="comboBox_es" Width="44" IsEditable="True" />
+                        </StackPanel>
+                    </Grid>
+                    <local:RecSettingView x:Name="recSettingView" Grid.Row="1"/>
+                </Grid>
             </TabItem>
         </TabControl>
-        <StackPanel Grid.Row="1" Margin="{StaticResource AppEdgeMargin}" Orientation="Horizontal">
-            <Button Content="予約" Margin="{StaticResource AppConfirmMargin}" Name="button_chg_reserve" Style="{StaticResource AppConfirmButtonStyle}" ToolTip="Ctrl + S" Click="button_chg_reserve_Click" />
-            <Button Content="削除" Margin="{StaticResource AppConfirmMargin}" Name="button_del_reserve" Style="{StaticResource AppConfirmButtonStyle}" ToolTip="Ctrl + D" Visibility="Hidden" Click="button_del_reserve_Click" />
-            <Button Content="キャンセル" Margin="{StaticResource AppConfirmMargin}" Style="{StaticResource AppConfirmButtonStyle}" Click="button_cancel_Click" />
-            <Button Content="番組情報を保存" IsEnabled="False" Margin="{StaticResource AppWideConfirmMargin}" Name="button_save_program" Style="{StaticResource AppConfirmButtonStyle}" Click="button_save_program_Click" />
+        <StackPanel Grid.Row="1">
+            <WrapPanel Margin="15,6" VerticalAlignment="Center" >
+                <Button Content="追加" Margin="6,0" Name="button_add_reserve" MinWidth="65" />
+                <Button Content="変更" Margin="6,0" Name="button_chg_reserve" MinWidth="65" />
+                <Button Content="削除" Margin="6,0" Name="button_del_reserve" MinWidth="65" />
+                <Button Content="キャンセル" Margin="6,0" Name="button_cancel" MinWidth="65" />
+                <Button Content="前へ" Margin="25,0,6,0" Name="button_up" MinWidth="45" />
+                <Button Content="次へ" Margin="6,0" Name="button_down" MinWidth="45" />
+                <Button Content="選択" Margin="6,0" Name="button_chk" MinWidth="45" />
+                <Button Content="番組情報を保存" Margin="25,0,6,0" Name="button_save_program" MinWidth="65" />
+            </WrapPanel>
+            <DockPanel Margin="12,0,12,5" >
+                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <CheckBox Content="このウィンドウにデータを開く" Margin="6,0,0,0" Name="checkBox_dataReplace" />
+                    <CheckBox Content="メインウィンドウの前面に表示" Margin="6,0,0,0" Name="checkBox_windowPinned" />
+                </WrapPanel>
+                <local:StatusView x:Name="statusBar" HorizontalAlignment="Left" VerticalAlignment="Center" />
+            </DockPanel>
         </StackPanel>
     </Grid>
-</Window>
+</local:ChgReserveWindowBase>

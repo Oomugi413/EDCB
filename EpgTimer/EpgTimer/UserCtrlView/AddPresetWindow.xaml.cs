@@ -1,18 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace EpgTimer
 {
+    using PresetEditor;
+
     /// <summary>
     /// AddPresetWindow.xaml の相互作用ロジック
     /// </summary>
@@ -21,30 +13,21 @@ namespace EpgTimer
         public AddPresetWindow()
         {
             InitializeComponent();
+            button_ok.Click += (sender, e) => DialogResult = true;
         }
 
-        public void SetMode(bool chgMode)
+        public void SetMode(PresetEdit chgMode, string title = "プリセット")
         {
-            label_chgMsg.Visibility = chgMode ? Visibility.Visible : Visibility.Collapsed;
-            button_chg.Visibility = chgMode ? Visibility.Visible : Visibility.Collapsed;
-            button_add.Visibility = chgMode ? Visibility.Collapsed : Visibility.Visible;
+            Title = title + new[] { "追加", "変更", "削除" }[(int)chgMode];
+            button_ok.Content = new[] { "追加", "変更", "削除" }[(int)chgMode];
+            label_chgMsg.Text = new[] { "", "(※設定内容も同時に変更されます)", "(※プリセットを削除します)" }[(int)chgMode];
+            textBox_name.SetReadOnlyWithEffect(chgMode == PresetEdit.Delete);
         }
 
         public string PresetName
         {
-            get
-            {
-                return textBox_name.Text;
-            }
-            set
-            {
-                textBox_name.Text = value;
-            }
-        }
-
-        private void button_ok_Click(object sender, RoutedEventArgs e)
-        {
-            DialogResult = true;
+            get { return textBox_name.Text; }
+            set { textBox_name.Text = value; }
         }
     }
 }

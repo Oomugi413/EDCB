@@ -1,15 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
 using System.Windows.Shapes;
 
 namespace EpgTimer.EpgView
@@ -19,138 +14,97 @@ namespace EpgTimer.EpgView
     /// </summary>
     public partial class DateView : UserControl
     {
-        public event Action<DateTime> TimeButtonClick;
-        public event Action<DateTime, ContextMenu, ContextMenuEventArgs> TimeButtonContextMenuOpening;
+        public event Action<DateTime, bool> TimeButtonClick = (time, isDayMove) => { };
 
         public DateView()
         {
             InitializeComponent();
-            button_prev.Tag = DateTime.MinValue;
-            button_next.Tag = DateTime.MaxValue;
-            if (Settings.ContextMenuResourceDictionary != null)
-            {
-                button_prev.ContextMenu.Resources.MergedDictionaries.Add(Settings.ContextMenuResourceDictionary);
-                button_next.ContextMenu.Resources.MergedDictionaries.Add(Settings.ContextMenuResourceDictionary);
-            }
         }
 
         public void ClearInfo()
         {
-            button_prev.IsEnabled = false;
-            button_next.IsEnabled = false;
-            button_prev.Visibility = Visibility.Collapsed;
-            uniformGrid_day.Children.Clear();
-            uniformGrid_time.Children.Clear();
+            uniformGrid_main.Children.Clear();
         }
 
-        public void SetTime(bool enablePrev, bool enableNext, DateTime startTime, DateTime endTime)
+        int span = 6;
+        public void SetTime(List<DateTime> timeList, EpgViewPeriod period)
         {
             ClearInfo();
-            button_prev.IsEnabled = enablePrev;
-            button_next.IsEnabled = enableNext;
-            button_prev.Visibility = enablePrev || enableNext ? Visibility.Visible : Visibility.Collapsed;
-            if (startTime != default(DateTime))
-            {
-                for (DateTime itemTime = startTime.Date; itemTime < endTime; itemTime = itemTime.AddDays(1))
-                {
-                    Button day = new Button();
-                    day.Content = new Border()
-                    {
-                        BorderThickness = new Thickness(),
-                        Child = new TextBlock()
-                        {
-                            Padding = new Thickness(2, 0, 2, 0),
-                            Text = itemTime.ToString("M\\/d(ddd)"),
-                            VerticalAlignment = VerticalAlignment.Center
-                        },
-                        Style = (Style)FindResource("AppEpgDateButtonTextBorderStyle")
-                    };
-                    day.FontWeight = FontWeights.Normal;
-                    if (itemTime.DayOfWeek == DayOfWeek.Saturday)
-                    {
-                        day.Foreground = (Brush)FindResource("AppEpgDateSaturdayButtonForegroundBrush");
-                    }
-                    else if (itemTime.DayOfWeek == DayOfWeek.Sunday)
-                    {
-                        day.Foreground = (Brush)FindResource("AppEpgDateSundayButtonForegroundBrush");
-                    }
-                    day.Style = (Style)FindResource("AppEpgButtonStyle");
-                    day.Tag = itemTime;
-                    day.Click += button_time_Click;
-                    uniformGrid_day.Children.Add(day);
+            if (timeList.Any() == false) return;
 
-                    for (int i = 6; i <= 18; i += 6)
-                    {
-                        Button hour = new Button();
-                        hour.Content = i.ToString();
-                        hour.Style = (Style)FindResource("AppEpgButtonStyle");
-                        hour.Tag = itemTime.AddHours(i);
-                        hour.Click += button_time_Click;
-                        uniformGrid_time.Children.Add(hour);
-                    }
+            span = 6;
+            DateTime start = CommonUtil.Max(timeList[0], period.Start);
+            DateTime end = CommonUtil.Min(timeList[timeList.Count - 1], period.End);
+
+            for (DateTime itemTime = start.Date; itemTime == start.Date || itemTime < end; itemTime += TimeSpan.FromDays(1))
+            {
+                var day = new Button();
+                day.Padding = new Thickness(1);
+                day.Content = itemTime.ToString("M/d(ddd)");
+                if (itemTime.DayOfWeek == DayOfWeek.Saturday) day.Foreground = Brushes.Blue;
+                if (itemTime.DayOfWeek == DayOfWeek.Sunday) day.Foreground = Brushes.Red;
+                day.Tag = itemTime;
+                day.Height = 21;
+                day.VerticalAlignment = VerticalAlignment.Top;
+                day.Click += (sender, e) => TimeButtonClick((DateTime)((Button)sender).Tag, true);//itemTimeはC#4以下でNG
+
+                var uGrid = new UniformGrid();
+                uGrid.Margin = new Thickness { Top = day.Height };
+                uGrid.Rows = 1;
+                for (int i = 0; i < 24; i += span)
+                {
+                    DateTime time = itemTime.AddHours(i);
+                    var hour = new Button();
+                    hour.Padding = new Thickness();
+                    hour.Content = new TextBlock { Text = i.ToString() };
+                    hour.Tag = time;
+                    hour.Height = 21;
+                    hour.Click += (sender, e) => TimeButtonClick((DateTime)((Button)sender).Tag, false);
+                    hour.IsEnabled = start.AddHours(-span) < time && time <= end;
+                    uGrid.Children.Add(hour);
                 }
-                columnDefinition.MinWidth = uniformGrid_time.Children.Count * columnDefinition_prev_next.Width.Value * 3 / 8;
-                columnDefinition.MaxWidth = uniformGrid_time.Children.Count * columnDefinition_prev_next.Width.Value;
+
+                //日付のマーキング。
+                var rect = new Rectangle();
+                rect.Stroke = day.Foreground;
+                rect.StrokeThickness = 2;
+                rect.RadiusX = 1;
+                rect.RadiusY = 1;
+                rect.Tag = itemTime;
+
+                //別のUniformGridに並べるとSetScrollTime()の後装飾でずれる場合があるようなので、Gridでまとめる
+                var grid = new Grid();
+                grid.Children.Add(day);
+                grid.Children.Add(uGrid);
+                grid.Children.Add(rect);
+                uniformGrid_main.Children.Add(grid);
             }
+            columnDefinition.MaxWidth = uniformGrid_main.Children.Count * 120;
+            SetTodayMark();
         }
 
         public void SetTodayMark()
         {
-            DateTime today = DateTime.UtcNow.AddHours(9).Date;
-            Button todayButton = uniformGrid_day.Children.OfType<Button>().FirstOrDefault(btn => (DateTime)btn.Tag == today);
-            Button markedButton = uniformGrid_day.Children.OfType<Button>().FirstOrDefault(btn => ((Border)btn.Content).BorderThickness.Left != 0);
-            if (todayButton != markedButton)
+            var date = CommonUtil.EdcbNow.Date;
+            foreach (Rectangle rect in uniformGrid_main.Children.OfType<Grid>().Select(grd => grd.Children[2]))
             {
-                if (markedButton != null)
-                {
-                    ((Border)markedButton.Content).BorderThickness = new Thickness();
-                }
-                if (todayButton != null)
-                {
-                    ((Border)todayButton.Content).BorderThickness = new Thickness(1);
-                }
+                rect.Visibility = (DateTime)rect.Tag == date ? Visibility.Visible : Visibility.Hidden;
             }
         }
-
         public void SetScrollTime(DateTime time)
         {
-            time = time.Date.AddHours(time.Hour / 6 * 6);
-            for (int i = 0; i < 2; i++)
+            var DayBtns = uniformGrid_main.Children.OfType<Grid>().Select(grd => (Button)grd.Children[0]).ToList();
+            var TimeBtns = uniformGrid_main.Children.OfType<Grid>().SelectMany(grd => ((Panel)grd.Children[1]).Children.OfType<Button>()).ToList();
+            if (TimeBtns.Any() == false) return;
+            time = CommonUtil.Max((DateTime)TimeBtns[0].Tag, CommonUtil.Min((DateTime)TimeBtns.Last().Tag, time));
+            time = time.Date.AddHours(time.Hour - time.Hour % span);
+            foreach (Button btn in DayBtns)
             {
-                Button timeButton = (i == 0 ? uniformGrid_time : uniformGrid_day).Children.OfType<Button>().FirstOrDefault(btn => (DateTime)btn.Tag == time);
-                Button markedButton = (i == 0 ? uniformGrid_time : uniformGrid_day).Children.OfType<Button>().FirstOrDefault(btn => btn.FontWeight == FontWeights.Bold);
-                if (timeButton != markedButton)
-                {
-                    if (markedButton != null)
-                    {
-                        markedButton.FontWeight = FontWeights.Normal;
-                    }
-                    if (timeButton != null)
-                    {
-                        timeButton.FontWeight = FontWeights.Bold;
-                    }
-                }
-                time = time.Date;
+                btn.FontWeight = (DateTime)btn.Tag == time.Date ? FontWeights.Bold : FontWeights.Normal;
             }
-        }
-
-        void button_time_Click(object sender, RoutedEventArgs e)
-        {
-            if (TimeButtonClick != null)
+            foreach (Button btn in TimeBtns)
             {
-                TimeButtonClick((DateTime)((Button)sender).Tag);
-            }
-        }
-
-        void button_time_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-        {
-            if (TimeButtonContextMenuOpening != null)
-            {
-                TimeButtonContextMenuOpening((DateTime)((Button)sender).Tag, ((Button)sender).ContextMenu, e);
-            }
-            else
-            {
-                e.Handled = true;
+                (btn.Content as TextBlock).TextDecorations = (DateTime)btn.Tag == time ? TextDecorations.Underline : null;
             }
         }
     }

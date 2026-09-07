@@ -1,55 +1,96 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace EpgTimer
 {
-    public class ReserveViewItem
+    public class ReserveViewItem : PanelItem<ReserveData>
     {
-        public ReserveViewItem(ReserveData info)
-        {
-            TitleDrawErr = false;
-            ReserveInfo = info;
-        }
+        public ReserveViewItem(ReserveData info) : base(info) { }
 
-        public ReserveData ReserveInfo
+        public override Brush BackColor { get { return this.EpgBrushCache().ResFillColorList[BrushIdx()]; } }
+        public override Brush BorderBrush { get { return this.EpgBrushCache().ResColorList[BrushIdx()]; } }
+        protected virtual int BrushIdx()
         {
-            get;
-            private set;
+            if (Data is ReserveDataEnd)
+            {
+                return 9;
+            }
+            if (Data.IsEnabled == false)
+            {
+                return 2;
+            }
+            if (Data.OverlapMode == 2)
+            {
+                return 3;
+            }
+            if ((ViewMode == 1 || this.EpgStyle().EpgChangeBorderOnRecWeekOnly == false) && Data.IsOnRec())
+            {
+                return 7 + SelectBorder(this.EpgStyle().EpgChangeBorderMode);
+            }
+            if (Data.OverlapMode == 1)
+            {
+                return 4;
+            }
+            if (Data.IsAutoAddInvalid)
+            {
+                return 5;
+            }
+            if (Data.IsMultiple)
+            {
+                return 6;
+            }
+            return SelectBorder(this.EpgStyle().EpgChangeBorderMode);
         }
-        public double Width
+        protected int SelectBorder(uint mode)
         {
-            get;
-            set;
+            return mode == 0 && !Data.IsAutoAdded || mode == 1 && Data.IsManual ? 1 : 0;
         }
+    }
 
-        public double Height
-        {
-            get;
-            set;
-        }
+    public class TunerReserveViewItem : ReserveViewItem
+    {
+        public TunerReserveViewItem(ReserveData info) : base(info) { }
 
-        public double LeftPos
+        public override Brush BackColor { get { return ViewUtil.ReserveErrBrush(Data); } }
+        public override Brush BorderBrush { get { return Settings.BrushCache.TunerResBorderColor[BrushIdx()]; } }
+        protected override int BrushIdx()
         {
-            get;
-            set;
+            if (Data.IsOnRec())
+            {
+                return 3 + SelectBorder(Settings.Instance.TunerChangeBorderMode);
+            }
+            if (Data.IsEnabled == false)
+            {
+                return 2;
+            }
+            return SelectBorder(Settings.Instance.TunerChangeBorderMode);
         }
-
-        public double TopPos
+        public Brush ServiceColor
         {
-            get;
-            set;
+            get
+            {
+                return Settings.BrushCache.CustTunerServiceColor[Settings.Instance.TunerColorModeUse ? Data.RecSetting.Priority : 0];
+            }
         }
-
-        public bool TitleDrawErr
+        public string Status
         {
-            get;
-            set;
+            get
+            {
+                if (Data.IsOnRec() == true)
+                {
+                    if (Data.IsEnabled == false || Data.OverlapMode == 2)
+                    {
+                        return "放送中*";
+                    }
+                    string RecStr = Data.IsWatchMode == true ? "視聴中*" : "録画中*";
+                    if (Data.OverlapMode == 1)
+                    {
+                        return "一部のみ" + RecStr;
+                    }
+                    return RecStr;
+                }
+                return "";
+            }
         }
     }
 }

@@ -1,0 +1,184 @@
+﻿<local:DataItemViewBase x:Class="EpgTimer.AutoAddListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             xmlns:local="clr-namespace:EpgTimer"
+             d:DesignHeight="400" d:DesignWidth="300" IsVisibleChanged="UserControl_IsVisibleChanged">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Style\ReserveListViewStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <local:GridViewColumnList x:Key="EpgAutoAddView">
+                <GridViewColumn DisplayMemberBinding="{Binding EventName}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="Andキーワード" Uid="EventName" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding NotKey}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="Notキーワード" Uid="NotKey" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding Note}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="メモ" Uid="Note" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding RegExp}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="正規表現" Uid="RegExp" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding Aimai}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="あいまい" Uid="Aimai" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding TitleOnly}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="番組名のみ" Uid="TitleOnly" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding CaseSensitive}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="大小文字区別" Uid="CaseSensitive" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding JyanruKey}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="ジャンル等" Uid="JyanruKey" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding DateKey}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="時間絞り込み" Uid="DateKey" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding AddCount}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="登録対象数" Uid="AddCount" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+            </local:GridViewColumnList>
+            <local:GridViewColumnList x:Key="ManualAutoAddView">
+                <GridViewColumn DisplayMemberBinding="{Binding EventName}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="番組名" Uid="EventName"/>
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding StartTime}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="時間" Uid="StartTime"/>
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn>
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="長さ" Uid="Duration" />
+                    </GridViewColumn.Header>
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Duration}" HorizontalAlignment="Right" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding DayOfWeek}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="曜日" Uid="DayOfWeek"/>
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+            </local:GridViewColumnList>
+            <local:GridViewColumnList x:Key="CommonColumns">
+                <GridViewColumn Width="10">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader IsEnabled="False"/>
+                    </GridViewColumn.Header>
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="-6,0" Background="{Binding BackColor2}" >
+                                <TextBlock Width="5" Background="{Binding BorderBrushLeft}" HorizontalAlignment="Left" />
+                            </Grid>
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding SearchCount}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="検索数" Uid="SearchCount" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding ReserveCount}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="予約数" Uid="ReserveCount" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding OnCount}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="有効予約数" Uid="OnCount" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding OffCount}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="無効予約数" Uid="OffCount" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding NextReserveName}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="次の予約" Uid="NextReserveName" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding NextReserve}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="次の予約時間" Uid="NextReserve" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn>
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="次の予約長さ" Uid="NextReserveDuration" />
+                    </GridViewColumn.Header>
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding NextReserveDuration}" HorizontalAlignment="Right" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn>
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="有効" Tag="有効/無効" Uid="KeyEnabled" />
+                    </GridViewColumn.Header>
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding KeyEnabled}" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding NetworkName}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="ネットワーク" Uid="NetworkName" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+                <GridViewColumn DisplayMemberBinding="{Binding ServiceName}">
+                    <GridViewColumn.Header>
+                        <GridViewColumnHeader Content="サービス名" Uid="ServiceName" />
+                    </GridViewColumn.Header>
+                </GridViewColumn>
+            </local:GridViewColumnList>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <DockPanel>
+        <StackPanel Name="stackPanel_button" MinWidth="100">
+            <Button Content="追加" Name="button_ShowAddDialog" Margin="0,10" />
+            <Button Content="削除" Name="button_Delete" Margin="0,10" />
+            <Button Content="予約ごと削除" Name="button_Delete2" Margin="0,10" />
+            <Button Content="キーワード予約作成" Name="button_ToAutoadd" Margin="0,10" />
+            <local:ListBoxDragMoverView x:Name="dragMover" Margin="0,20,0,0" />
+        </StackPanel>
+        <ListView x:Name="listView_key" Style="{StaticResource DataListViewStyle}" >
+            <ListView.View>
+                <GridView x:Name="gridView_key" />
+            </ListView.View>
+        </ListView>
+    </DockPanel>
+</local:DataItemViewBase>
