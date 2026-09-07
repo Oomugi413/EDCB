@@ -53,3 +53,4 @@ Release/
 obj/
 HttpPublic/
 Setting/
+tests/
