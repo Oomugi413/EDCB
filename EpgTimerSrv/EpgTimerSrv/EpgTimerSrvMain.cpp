@@ -186,6 +186,19 @@ void KeepPackedRecTag(REC_SETTING_DATA& dst, const REC_SETTING_DATA& src)
 	}
 }
 
+#ifndef _WIN32
+LONGLONG CalcReserveStartTime(const RESERVE_DATA& data, int defaultStartMargin)
+{
+	LONGLONG startTime = ConvertI64Time(data.startTime);
+	LONGLONG duration = (LONGLONG)data.durationSecond * I64_1SEC;
+	int startMarginSec = data.recSetting.useMargineFlag != 0 ? data.recSetting.startMargine : defaultStartMargin;
+	LONGLONG startMargin = (LONGLONG)startMarginSec * I64_1SEC;
+	//開始マージンは元の予約終了時刻を超えて負であってはならない。
+	startMargin = std::max(startMargin, -duration);
+	return startTime - startMargin;
+}
+#endif
+
 void EnumEpgAutoAddReserveIDs(const CEpgDBManager& epgDB, const EPG_AUTO_ADD_DATA& data,
                               const vector<RESERVE_DATA>& reserveList, bool separateFixedTuners, std::set<DWORD>& reserveIDSet)
 {
@@ -1617,12 +1630,22 @@ bool CEpgTimerSrvMain::SyncChangeAutoAddReserveData(const vector<EPG_AUTO_ADD_DA
 	bool syncChgNewRes;
 	bool syncChgKeepRecTag;
 	bool separateFixedTuners;
+#ifndef _WIN32
+	bool cautionOnRecChange;
+	int cautionOnRecMarginMin;
+	int defaultStartMargin;
+#endif
 	{
 		lock_recursive_mutex lock(this->settingLock);
 		syncChange = this->setting.syncResAutoAddChange;
 		syncChgNewRes = this->setting.syncResAutoAddChgNewRes;
 		syncChgKeepRecTag = this->setting.syncResAutoAddChgKeepRecTag;
 		separateFixedTuners = this->setting.separateFixedTuners;
+#ifndef _WIN32
+		cautionOnRecChange = this->setting.cautionOnRecChange;
+		cautionOnRecMarginMin = this->setting.cautionOnRecMarginMin;
+		defaultStartMargin = this->setting.startMargin;
+#endif
 	}
 	if( syncChange == false ){
 		return true;
@@ -1711,13 +1734,23 @@ bool CEpgTimerSrvMain::SyncChangeAutoAddReserveData(const vector<EPG_AUTO_ADD_DA
 
 	if( syncChgNewRes ){
 		vector<DWORD> delReserveList;
+#ifndef _WIN32
+		LONGLONG protectMinutes = cautionOnRecChange ? cautionOnRecMarginMin : 1;
+		LONGLONG protectTime = GetNowI64Time() + protectMinutes * 60 * I64_1SEC;
+#else
 		LONGLONG protectTime = GetNowI64Time() + 60 * I64_1SEC;
+#endif
 		for( auto itr = chgMap.begin(); itr != chgMap.end(); ){
 			auto itrReserve = reserveMap.find(itr->first);
 			if( itrReserve != reserveMap.end() &&
-			    itrReserve->second.recSetting.IsNoRec() == false &&
-			    ConvertI64Time(itrReserve->second.startTime) > protectTime &&
-			    HasEnabledAutoAddAfterRemove(enabledMap, itr->first, targetEpgIDSet, targetManualIDSet) == false ){
+#ifndef _WIN32
+				itr->second.recSetting.IsNoRec() == false &&
+				CalcReserveStartTime(itr->second, defaultStartMargin) > protectTime &&
+#else
+				itrReserve->second.recSetting.IsNoRec() == false &&
+				ConvertI64Time(itrReserve->second.startTime) > protectTime &&
+#endif
+				HasEnabledAutoAddAfterRemove(enabledMap, itr->first, targetEpgIDSet, targetManualIDSet) == false ){
 				delReserveList.push_back(itr->first);
 				itr = chgMap.erase(itr);
 			}else{
