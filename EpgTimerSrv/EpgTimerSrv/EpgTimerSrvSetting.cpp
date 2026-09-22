@@ -9,6 +9,39 @@
 #include <windowsx.h>
 #include <shlobj.h>
 #include <commdlg.h>
+#else
+#include <errno.h>
+#include <wctype.h>
+#endif
+
+#ifndef _WIN32
+namespace
+{
+
+int GetPrivateProfileIntStrict(LPCWSTR appName, LPCWSTR keyName, int defValue, int minValue, LPCWSTR iniPath)
+{
+	wstring value = GetPrivateProfileToString(appName, keyName, L"", iniPath);
+	const WCHAR* begin = value.c_str();
+	while( *begin != L'\0' && iswspace(*begin) != 0 ){
+		begin++;
+	}
+	if( *begin == L'\0' ){
+		return defValue;
+	}
+	errno = 0;
+	WCHAR* end = NULL;
+	long parsed = wcstol(begin, &end, 10);
+	while( *end != L'\0' && iswspace(*end) != 0 ){
+		end++;
+	}
+	if( end == begin || *end != L'\0' || errno == ERANGE || parsed < minValue || parsed > INT_MAX ){
+		return defValue;
+	}
+	return (int)parsed;
+}
+
+}
+
 #endif
 
 CEpgTimerSrvSetting::SETTING CEpgTimerSrvSetting::LoadSetting(LPCWSTR iniPath)
@@ -134,6 +167,15 @@ CEpgTimerSrvSetting::SETTING CEpgTimerSrvSetting::LoadSetting(LPCWSTR iniPath)
 	s.retryOtherTuners = GetPrivateProfileInt(L"SET", L"RetryOtherTuners", 0, iniPath) != 0;
 	s.separateFixedTuners = GetPrivateProfileInt(L"SET", L"SeparateFixedTuners", 0, iniPath) != 0;
 	s.commentAutoAdd = GetPrivateProfileInt(L"SET", L"CommentAutoAdd", 0, iniPath) != 0;
+#ifndef _WIN32
+	//自動予約変更時に録画開始直前の予約を保護する設定
+	s.cautionOnRecChange = GetPrivateProfileIntStrict(L"SET", L"CautionOnRecChange", 1, INT_MIN, iniPath) != 0;
+	s.cautionOnRecMarginMin = GetPrivateProfileIntStrict(L"SET", L"CautionOnRecMarginMin", 5, 0, iniPath);
+#endif
+	s.syncResAutoAddChange = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChange", 0, iniPath) != 0;
+	s.syncResAutoAddDelete = GetPrivateProfileInt(L"SET", L"SyncResAutoAddDelete", 0, iniPath) != 0;
+	s.syncResAutoAddChgNewRes = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChgNewRes", 0, iniPath) != 0;
+	s.syncResAutoAddChgKeepRecTag = GetPrivateProfileInt(L"SET", L"SyncResAutoAddChgKeepRecTag", 0, iniPath) != 0;
 	s.fixNoRecToServiceOnly = GetPrivateProfileInt(L"SET", L"FixNoRecToServiceOnly", 0, iniPath) != 0;
 	s.autoDelRecInfo = GetPrivateProfileInt(L"SET", L"AutoDelRecInfo", 0, iniPath) != 0;
 	s.autoDelRecInfoNum = GetPrivateProfileInt(L"SET", L"AutoDelRecInfoNum", 100, iniPath);

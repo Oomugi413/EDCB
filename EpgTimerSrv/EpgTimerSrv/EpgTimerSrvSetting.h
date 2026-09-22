@@ -44,6 +44,14 @@ public:
 		bool retryOtherTuners;
 		bool separateFixedTuners;
 		bool commentAutoAdd;
+#ifndef _WIN32
+		bool cautionOnRecChange;
+		int cautionOnRecMarginMin;
+#endif
+		bool syncResAutoAddChange;
+		bool syncResAutoAddDelete;
+		bool syncResAutoAddChgNewRes;
+		bool syncResAutoAddChgKeepRecTag;
 		bool fixNoRecToServiceOnly;
 		bool autoDelRecInfo;
 		DWORD autoDelRecInfoNum;
