@@ -1,162 +1,95 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using System.ComponentModel;
-using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows.Controls;
 
 namespace EpgTimer
 {
     /// <summary>
     /// NotifyLogWindow.xaml の相互作用ロジック
     /// </summary>
-    public partial class NotifyLogWindow : Window
+    public partial class NotifyLogWindow : NotifyLogWindowBase
     {
-        string _lastHeaderClicked = null;
-        ListSortDirection _lastDirection = ListSortDirection.Ascending;
-        string _lastHeaderClicked2 = null;
-        ListSortDirection _lastDirection2 = ListSortDirection.Ascending;
-
+        private ListViewController<NotifySrvInfoItem> lstCtrl;
         public NotifyLogWindow()
         {
             InitializeComponent();
-            textBox_logMax.Text = Settings.Instance.NotifyLogMax.ToString();
-        }
 
-        private void ReloadList()
+            try
+            {
+                base.SetParam(false, checkBox_windowPinned);
+
+                this.KeyDown += ViewUtil.KeyDown_Escape_Close;
+                this.KeyDown += ViewUtil.KeyDown_Enter(this.button_reload);
+                this.textBox_logMax.Text = Settings.Instance.NotifyLogMax.ToString();
+                this.button_reload.Click += (sender, e) => ReloadInfoData();
+
+                //リストビュー関連の設定
+                lstCtrl = new ListViewController<NotifySrvInfoItem>(this);
+                lstCtrl.SetInitialSortKey(CommonUtil.NameOf(() => (new NotifySrvInfoItem()).TimeView), ListSortDirection.Descending);
+                lstCtrl.SetViewSetting(listView_log, gridView_log, false, true);
+
+                //データ読込
+                ReloadInfoData();
+            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+        }
+        protected override bool ReloadInfoData()
         {
-            string notifyLog = "";
-            if (CommonManager.CreateSrvCtrl().SendGetNotifyLog(Math.Max(Settings.Instance.NotifyLogMax, 1), ref notifyLog) == ErrCode.CMD_SUCCESS)
+            checkBox_displayInternal.IsEnabled = IniFileHandler.GetPrivateProfileInt("SET", "SaveNotifyLog", 0, SettingPath.TimerSrvIniPath) != 0;
+            checkBox_displayInternal.ToolTip = checkBox_displayInternal.IsEnabled == true ? null : "未接続または「情報通知ログをファイルに保存する(EpgTimerSrv)」が無効です";
+            checkBox_displayInternal.IsChecked = checkBox_displayInternal.IsEnabled == false || Settings.Instance.NotifyLogEpgTimer;
+            return lstCtrl.ReloadInfoData(dataList =>
             {
-                //サーバに保存されたログを使う
-                listView_log.ItemsSource = notifyLog.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(text => new NotifySrvInfoItem(text)).ToList();
-                textBox_logMax.IsEnabled = true;
-            }
-            else
-            {
-                //クライアントで蓄積したログを使う
-                listView_log.ItemsSource = CommonManager.Instance.NotifyLogList.Select(info => new NotifySrvInfoItem(info)).ToList();
-                textBox_logMax.IsEnabled = false;
-            }
-
-            if (_lastHeaderClicked != null)
-            {
-                Sort(_lastHeaderClicked, _lastDirection);
-            }
-            else
-            {
-                string header = ((Binding)gridView_log.Columns[0].DisplayMemberBinding).Path.Path;
-                Sort(header, _lastDirection);
-                _lastHeaderClicked = header;
-            }
+                if (checkBox_displayInternal.IsChecked == false)
+                {
+                    //サーバに保存されたログを使う
+                    string notifyLog = "";
+                    CommonManager.CreateSrvCtrl().SendGetNotifyLog(Math.Max(Settings.Instance.NotifyLogMax, 1), ref notifyLog);
+                    dataList.AddRange(notifyLog.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                                .Select(text => new NotifySrvInfoItem(text)));
+                }
+                else
+                {
+                    //クライアントで蓄積したログを使う
+                    dataList.AddRange(CommonManager.Instance.NotifyLogList.Skip(CommonManager.Instance.NotifyLogList.Count - Settings.Instance.NotifyLogMax)
+                                                .Select(info => new NotifySrvInfoItem(info)));
+                }
+                return true;
+            });
         }
-
-        private void Sort(string sortBy, ListSortDirection direction)
+        private void button_save_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                ICollectionView dataView = CollectionViewSource.GetDefaultView(listView_log.ItemsSource);
-
-                dataView.SortDescriptions.Clear();
-
-                SortDescription sd = new SortDescription(sortBy, direction);
-                dataView.SortDescriptions.Add(sd);
-                if (_lastHeaderClicked2 != null)
+                var dlg = new Microsoft.Win32.SaveFileDialog();
+                dlg.FileName = "EpgTimerSrvNotify.log";
+                dlg.DefaultExt = ".log";
+                dlg.Filter = "log Files|*.log|all Files|*.*";
+                if (dlg.ShowDialog() == true)
                 {
-                    if (sortBy != _lastHeaderClicked2)
+                    using (var file = new StreamWriter(dlg.FileName, false, Encoding.Unicode))
                     {
-                        SortDescription sd2 = new SortDescription(_lastHeaderClicked2, _lastDirection2);
-                        dataView.SortDescriptions.Add(sd2);
-                    }
-                }
-                dataView.Refresh();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void GridViewColumnHeader_Click(object sender, RoutedEventArgs e)
-        {
-            GridViewColumnHeader headerClicked = e.OriginalSource as GridViewColumnHeader;
-            ListSortDirection direction;
-
-            if (headerClicked != null)
-            {
-                if (headerClicked.Role != GridViewColumnHeaderRole.Padding)
-                {
-                    string header = ((Binding)headerClicked.Column.DisplayMemberBinding).Path.Path;
-                    if (header != _lastHeaderClicked)
-                    {
-                        direction = ListSortDirection.Ascending;
-                        _lastHeaderClicked2 = _lastHeaderClicked;
-                        _lastDirection2 = _lastDirection;
-                    }
-                    else
-                    {
-                        if (_lastDirection == ListSortDirection.Ascending)
-                        {
-                            direction = ListSortDirection.Descending;
-                        }
-                        else
-                        {
-                            direction = ListSortDirection.Ascending;
-                        }
-                    }
-
-                    Sort(header, direction);
-
-                    _lastHeaderClicked = header;
-                    _lastDirection = direction;
-                }
-            }
-        }
-
-        private void Window_Loaded(object sender, RoutedEventArgs e)
-        {
-
-            ReloadList();
-        }
-
-        private void button_clear_Click(object sender, RoutedEventArgs e)
-        {
-            CommonManager.Instance.NotifyLogList.Clear();
-            ReloadList();
-        }
-
-        private void button_save_Click(object sender, RoutedEventArgs e)
-        {
-            Microsoft.Win32.SaveFileDialog dlg = new Microsoft.Win32.SaveFileDialog();
-            dlg.DefaultExt = ".txt";
-            dlg.Filter = "txt Files (.txt)|*.txt;|all Files(*.*)|*.*";
-
-            if (listView_log.ItemsSource != null && dlg.ShowDialog() == true)
-            {
-                using (var file = new StreamWriter(dlg.FileName, false, Encoding.Unicode))
-                {
-                    foreach (NotifySrvInfoItem info in listView_log.ItemsSource)
-                    {
-                        file.WriteLine(info);
+                        lstCtrl.dataList.ForEach(info => file.WriteLine(info));
                     }
                 }
             }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
-
         private void textBox_logMax_TextChanged(object sender, TextChangedEventArgs e)
         {
             int logMax;
             int.TryParse(textBox_logMax.Text, out logMax);
             Settings.Instance.NotifyLogMax = logMax;
         }
+        private void checkBox_displayInternal_Click(object sender, RoutedEventArgs e)
+        {
+            Settings.Instance.NotifyLogEpgTimer = checkBox_displayInternal.IsChecked == true;
+            ReloadInfoData();
+        }
     }
+    public class NotifyLogWindowBase : AttendantDataWindow<NotifyLogWindow> { }
 }

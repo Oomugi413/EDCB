@@ -1,73 +1,59 @@
-﻿<Window x:Class="EpgTimer.AddManualAutoAddWindow"
+﻿<local:AddManualAutoAddWindowBase x:Class="EpgTimer.AddManualAutoAddWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:my="clr-namespace:EpgTimer"
-        SizeToContent="Height" Style="{StaticResource AppWindowStyle}" Title="プログラム予約条件" Width="{StaticResource AppRecSettingWindowWidth}" WindowStartupLocation="CenterOwner" PreviewKeyDown="Window_PreviewKeyDown">
+        xmlns:local="clr-namespace:EpgTimer"
+        Title="プログラム自動予約登録" Height="570" Width="780" >
+
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="auto" />
+            <RowDefinition Height="auto" />
         </Grid.RowDefinitions>
-        <Grid Margin="{StaticResource AppEdgeMarginLTR}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <Label Content="録画曜日" Style="{StaticResource AppTermLabelStyle}" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <CheckBox Content="日" Name="checkBox_week0" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="月" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week1" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="火" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week2" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="水" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week3" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="木" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week4" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="金" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week5" Style="{StaticResource AppCheckBoxStyle}" />
-                <CheckBox Content="土" Margin="{StaticResource AppWideMarginL}" Name="checkBox_week6" Style="{StaticResource AppCheckBoxStyle}" />
+        <StackPanel Margin="12,6,0,0">
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Label Content="番組名" Width="76" />
+                <TextBox Name="textBox_title"  Width="256" />
+                <Label Content="サービス　"  Margin="18,0,0,0" />
+                <ComboBox Name="comboBox_service" Width="200" />
             </StackPanel>
-            <FrameworkElement Grid.Row="1" Margin="{StaticResource AppMarginT}" />
-            <Label Content="録画時間" Grid.Row="2" Style="{StaticResource AppTermLabelStyle}" />
-            <ComboBox Grid.Column="1" Grid.Row="2" HorizontalAlignment="Left" Name="comboBox_hms_ref" SelectedIndex="0" Style="{StaticResource AppComboBoxStyle}" Visibility="Hidden">
-                <ComboBoxItem Content="88" />
-            </ComboBox>
-            <StackPanel Grid.Column="1" Grid.Row="2" Orientation="Horizontal">
-                <ComboBox Name="comboBox_startHH" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                <Label Content="：" Style="{StaticResource AppLabelStyle}" />
-                <ComboBox Name="comboBox_startMM" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                <Label Content="：" Style="{StaticResource AppLabelStyle}" />
-                <ComboBox Name="comboBox_startSS" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                <Label Content="～" Margin="{StaticResource AppWideMarginLR}" Style="{StaticResource AppLabelStyle}" />
-                <ComboBox Name="comboBox_endHH" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                <Label Content="：" Style="{StaticResource AppLabelStyle}" />
-                <ComboBox Name="comboBox_endMM" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
-                <Label Content="：" Style="{StaticResource AppLabelStyle}" />
-                <ComboBox Name="comboBox_endSS" Style="{StaticResource AppComboBoxStyle}" Width="{Binding ActualWidth, ElementName=comboBox_hms_ref}" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Name="panel_times">
+                <Label Content="録画時間" Width="76" />
+                <ComboBox Name="comboBox_startHH" Width="44" IsEditable="True" />
+                <ComboBox Name="comboBox_startMM" Width="44" Margin="3,0" IsEditable="True" />
+                <ComboBox Name="comboBox_startSS" Width="44" IsEditable="True" />
+                <Label Content="　～　" />
+                <ComboBox Name="comboBox_endHH" Width="44" IsEditable="True" />
+                <ComboBox Name="comboBox_endMM" Width="44" Margin="3,0" IsEditable="True" />
+                <ComboBox Name="comboBox_endSS" Width="44" IsEditable="True" />
             </StackPanel>
-            <FrameworkElement Grid.Row="3" Margin="{StaticResource AppMarginT}" />
-            <Label Content="番組名" Grid.Row="4" Style="{StaticResource AppTermLabelStyle}" />
-            <TextBox Grid.Column="1" Grid.Row="4" Name="textBox_title" Style="{StaticResource AppTextBoxStyle}" />
-            <FrameworkElement Grid.Row="5" Margin="{StaticResource AppMarginT}" />
-            <Label Content="サービス" Grid.Row="6" Style="{StaticResource AppTermLabelStyle}" />
-            <Grid Grid.Column="1" Grid.Row="6">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <ComboBox Name="comboBox_service" Style="{StaticResource AppComboBoxStyle}" />
-            </Grid>
-        </Grid>
-        <my:RecSettingView Grid.Row="1" Margin="{StaticResource AppWideMarginT}" x:Name="recSettingView" />
-        <StackPanel Grid.Row="2" Margin="{StaticResource AppEdgeMargin}" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="追加" Name="button_add" Style="{StaticResource AppConfirmButtonStyle}" ToolTip="Ctrl + S" Click="button_add_Click" />
-            <Button Content="キャンセル" Margin="{StaticResource AppConfirmMargin}" Style="{StaticResource AppConfirmButtonStyle}" Click="button_cancel_Click" />
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Label Content="録画曜日" Width="76" />
+                <StackPanel Name="stackPanel_week" Orientation="Horizontal" />
+                <CheckBox Content="自動登録を無効にする" Margin="30,0,0,0" Name="checkBox_keyDisabled" />
+            </StackPanel>
         </StackPanel>
+        <local:RecSettingView Grid.Row="1" Margin="1,2,0,0" x:Name="recSettingView" />
+        <WrapPanel Grid.Row="2" HorizontalAlignment="Right" Margin="0,6,0,12" >
+            <StackPanel Margin="20,0,20,0" Orientation="Horizontal">
+                <Button Content="追加" Margin="10,0,10,0" Name="button_add" MinWidth="48" />
+                <Button Content="変更" Margin="10,0,10,0" Name="button_chg" MinWidth="48" />
+                <Button Content="削除" Margin="10,0,10,0" Name="button_del" MinWidth="48" />
+                <Button Content="予約ごと削除" Margin="10,0,10,0" Name="button_del2" MinWidth="48" />
+            </StackPanel>
+            <StackPanel Margin="20,0,20,0" Orientation="Horizontal">
+                <Button Content="前へ" Margin="10,0,10,0" Name="button_up" MinWidth="48" />
+                <Button Content="次へ" Margin="10,0,10,0" Name="button_down" MinWidth="48" />
+            </StackPanel>
+            <Button Content="閉じる" Margin="20,0,20,0" Name="button_cancel" MinWidth="48" />
+        </WrapPanel>
+        <DockPanel Grid.Row="3" Margin="12,0,12,5" >
+            <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center" >
+                <CheckBox Content="このウィンドウにデータを開く" Margin="6,0,0,0" Name="checkBox_dataReplace" />
+                <CheckBox Content="メインウィンドウの前面に表示" Margin="6,0,0,0" Name="checkBox_windowPinned" />
+            </WrapPanel>
+            <local:StatusView x:Name="statusBar" HorizontalAlignment="Left" VerticalAlignment="Center" />
+        </DockPanel>
     </Grid>
-</Window>
+</local:AddManualAutoAddWindowBase>

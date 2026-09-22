@@ -121,23 +121,25 @@ namespace EpgTimer
             catch (Exception ex)
             {
                 MessageBox.Show(ex.ToString());
-            }
+            } 
             return true;
         }
 
-        public string StartStreamingPlay(string filePath, uint reserveID)
+        public bool StartStreamingPlay(string filePath, uint reserveID)
         {
             try
             {
                 if (Settings.Instance.TvTestExe.Length == 0)
                 {
-                    return "TVTest.exeのパスが設定されていません";
+                    MessageBox.Show("TVTest.exeのパスが設定されていません");
+                    return false;
                 }
                 if (CommonManager.Instance.NWMode == false && (Settings.Instance.NwTvModeTCP == false || Settings.Instance.NwTvModePipe == false))
                 {
                     if (IniFileHandler.GetPrivateProfileInt("SET", "EnableTCPSrv", 0, SettingPath.TimerSrvIniPath) == 0)
                     {
-                        return "動作設定でネットワーク接続を許可する必要があります";
+                        MessageBox.Show("動作設定でネットワーク接続を許可する必要があります。");
+                        return false;
                     }
                 }
                 var sendInfo = new TVTestStreamingInfo();
@@ -148,7 +150,7 @@ namespace EpgTimer
                     if (err != ErrCode.CMD_SUCCESS)
                     {
                         MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "まだ録画が開始されていません。");
-                        return null;
+                        return false;
                     }
                     sendInfo.ctrlID = playInfo.ctrlID;
                     sendInfo.filePath = playInfo.filePath;
@@ -159,7 +161,7 @@ namespace EpgTimer
                     if (err != ErrCode.CMD_SUCCESS)
                     {
                         MessageBox.Show(CommonManager.GetErrCodeText(err) ?? "ファイルを開けませんでした。");
-                        return null;
+                        return false;
                     }
                 }
 
@@ -210,8 +212,8 @@ namespace EpgTimer
             catch (Exception ex)
             {
                 MessageBox.Show(ex.ToString());
-            }
-            return null;
+            } 
+            return true;
         }
 
         private void OpenTVTest(int openWait, bool acceptViewApp)

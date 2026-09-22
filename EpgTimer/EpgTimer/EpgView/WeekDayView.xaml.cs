@@ -1,28 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-
 
 namespace EpgTimer.EpgView
 {
     /// <summary>
     /// WeekDayView.xaml の相互作用ロジック
     /// </summary>
-    public partial class WeekDayView : UserControl
+    public partial class WeekDayView : UserControl, IEpgSettingAccess, IEpgViewDataSet
     {
-        public event Action<DateTime> Click;
-
         public WeekDayView()
         {
             InitializeComponent();
@@ -33,85 +23,64 @@ namespace EpgTimer.EpgView
             stackPanel_day.Children.Clear();
         }
 
-        public void SetDay(List<DateTime> dayList, double serviceWidth, bool gradationHeader, bool isClickLeft)
+        public int EpgSettingIndex { get; private set; }
+        public void SetViewData(EpgViewData data)
         {
-            stackPanel_day.Children.Clear();
-            if (serviceWidth > 2)
-            {
-                uint tickCountToPreventAccidentalClick = (uint)Environment.TickCount;
-                foreach (DateTime time in dayList)
-                {
-                    var item = new TextBlock()
-                    {
-                        Style = (Style)FindResource(
-                            time.DayOfWeek == DayOfWeek.Saturday ? "AppEpgWeekDayHeaderSaturdayTextBlockStyle" :
-                            time.DayOfWeek == DayOfWeek.Sunday ? "AppEpgWeekDayHeaderSundayTextBlockStyle" : "AppEpgWeekDayHeaderTextBlockStyle"),
-                        Text = time.ToString("M\\/d\r\n(ddd)"),
-                    };
-                    var border = new Border()
-                    {
-                        BorderThickness = new Thickness(),
-                        Child = item,
-                        Style = (Style)FindResource("AppEpgWeekDayHeaderTextBorderStyle"),
-                    };
-                    var backgroundColor = (Color)FindResource(
-                        time.DayOfWeek == DayOfWeek.Saturday ? "AppEpgWeekDayHeaderSaturdayTextBackgroundColor" :
-                        time.DayOfWeek == DayOfWeek.Sunday ? "AppEpgWeekDayHeaderSundayTextBackgroundColor" : "AppEpgWeekDayHeaderTextBackgroundColor");
-                    var gridItem = new UniformGrid();
-                    if (gradationHeader == false)
-                    {
-                        gridItem.Background = new SolidColorBrush(backgroundColor);
-                        gridItem.Background.Freeze();
-                    }
-                    else
-                    {
-                        gridItem.Background = ColorDef.GradientBrush(backgroundColor, 0.8);
-                    }
-
-                    gridItem.Margin = new Thickness(1, 1, 1, 1);
-                    gridItem.Width = serviceWidth - 2;
-                    if (isClickLeft)
-                    {
-                        gridItem.MouseLeftButtonDown += (sender, e) =>
-                        {
-                            if (Click != null && (uint)e.Timestamp - tickCountToPreventAccidentalClick > 500)
-                            {
-                                Click((DateTime)((FrameworkElement)sender).Tag);
-                            }
-                        };
-                    }
-                    else
-                    {
-                        gridItem.MouseRightButtonUp += (sender, e) =>
-                        {
-                            if (Click != null && (uint)e.Timestamp - tickCountToPreventAccidentalClick > 500)
-                            {
-                                Click((DateTime)((FrameworkElement)sender).Tag);
-                            }
-                        };
-                    }
-                    gridItem.Tag = time;
-                    gridItem.Children.Add(border);
-                    stackPanel_day.Children.Add(gridItem);
-                }
-            }
+            EpgSettingIndex = data.EpgSettingIndex;
+            Background = this.EpgBrushCache().WeekdayBorderColor;
         }
 
-        public void SetTodayMark(int startHour)
+        public void SetDay(List<DateTime> dayList)
         {
-            DateTime today = DateTime.UtcNow.AddHours(9 - startHour).Date;
-            UniformGrid todayItem = stackPanel_day.Children.OfType<UniformGrid>().FirstOrDefault(grid => (DateTime)grid.Tag == today);
-            UniformGrid markedItem = stackPanel_day.Children.OfType<UniformGrid>().FirstOrDefault(grid => ((Border)grid.Children[0]).BorderThickness.Left != 0);
-            if (todayItem != markedItem)
             {
-                if (markedItem != null)
+                stackPanel_day.Children.Clear();
+                foreach (DateTime time in dayList)
                 {
-                    ((Border)markedItem.Children[0]).BorderThickness = new Thickness();
+                    TextBlock item = ViewUtil.GetPanelTextBlock(time.ToString("M/d\r\n(ddd)"));
+                    item.Tag = time;
+                    item.Width = this.EpgStyle().ServiceWidth - 1;
+
+                    Color backgroundColor;
+                    if (time.DayOfWeek == DayOfWeek.Saturday)
+                    {
+                        item.Foreground = Brushes.DarkBlue;
+                        backgroundColor = Colors.Lavender;
+                    }
+                    else if (time.DayOfWeek == DayOfWeek.Sunday)
+                    {
+                        item.Foreground = Brushes.DarkRed;
+                        backgroundColor = Colors.MistyRose;
+                    }
+                    else
+                    {
+                        item.Foreground = Brushes.Black;
+                        backgroundColor = Colors.White;
+                    }
+                    item.Padding = new Thickness(0, 0, 0, 2);
+                    item.VerticalAlignment = VerticalAlignment.Center;
+                    item.FontWeight = FontWeights.Bold;
+
+                    var grid = new UniformGrid();
+                    grid.Background = this.EpgStyle().EpgGradationHeader ? (Brush)ColorDef.GradientBrush(backgroundColor, 0.8, 1.2) : new SolidColorBrush(backgroundColor);
+                    grid.Background.Freeze();
+                    grid.Margin = new Thickness(0, 1, 1, 1);
+                    grid.Tag = time;
+                    grid.Children.Add(item);
+                    stackPanel_day.Children.Add(grid);
                 }
-                if (todayItem != null)
-                {
-                    ((Border)todayItem.Children[0]).BorderThickness = new Thickness(1);
-                }
+                rect_day.Width = this.EpgStyle().ServiceWidth - 1;
+                SetTodayMark();
+            }
+        }
+        public void SetTodayMark()
+        {
+            var date = CommonUtil.EdcbNow.Date;
+            var grid = stackPanel_day.Children.OfType<UniformGrid>().FirstOrDefault(grd => (DateTime)grd.Tag == date);
+            rect_day.Visibility = grid == null ? Visibility.Collapsed : Visibility.Visible;
+            if (grid != null)
+            {
+                rect_day.Stroke = ((TextBlock)grid.Children[0]).Foreground;
+                rect_day.Margin = new Thickness { Left = 1 + this.EpgStyle().ServiceWidth * stackPanel_day.Children.IndexOf(grid) };
             }
         }
     }

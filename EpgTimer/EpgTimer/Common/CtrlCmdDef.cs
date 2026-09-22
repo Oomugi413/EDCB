@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace EpgTimer
 {
@@ -63,7 +64,7 @@ namespace EpgTimer
     }
 
     /// <summary>録画フォルダ情報</summary>
-    public class RecFileSetInfo : ICtrlCmdReadWrite
+    public class RecFileSetInfo : ICtrlCmdReadWrite, IDeepCloneObj
     {
         /// <summary>録画フォルダ</summary>
         public string RecFolder = "";
@@ -94,35 +95,40 @@ namespace EpgTimer
             r.Read(ref RecFileName);
             r.End();
         }
+        public object DeepCloneObj() { return MemberwiseClone(); }
     }
 
     /// <summary>録画設定情報</summary>
-    public class RecSettingData : ICtrlCmdReadWrite
+    public partial class RecSettingData : ICtrlCmdReadWrite, IDeepCloneObj
     {
+        /// <summary>録画有効</summary>
+        public bool IsEnable = true;
         /// <summary>録画モード</summary>
-        public byte RecMode = 1;
+        public byte RecMode = 2;
         /// <summary>優先度</summary>
         public byte Priority = 1;
         /// <summary>イベントリレー追従するかどうか</summary>
         public byte TuijyuuFlag = 1;
         /// <summary>処理対象データモード</summary>
-        public uint ServiceMode;
+        public uint ServiceMode = 16;
         /// <summary>ぴったり？録画</summary>
         public byte PittariFlag;
         /// <summary>録画後BATファイルパス</summary>
         public string BatFilePath = "";
+        /// <summary>録画タグ/summary>
+        public string RecTag = "";
         /// <summary>録画フォルダパス</summary>
         public List<RecFileSetInfo> RecFolderList = new List<RecFileSetInfo>();
         /// <summary>休止モード</summary>
-        public byte SuspendMode;
+        public byte SuspendMode = 2;
         /// <summary>録画後再起動する</summary>
         public byte RebootFlag;
         /// <summary>録画マージンを個別指定</summary>
         public byte UseMargineFlag;
         /// <summary>録画開始時のマージン</summary>
-        public int StartMargine = 10;
+        public int StartMargine = 5;
         /// <summary>録画終了時のマージン</summary>
-        public int EndMargine = 5;
+        public int EndMargine = 2;
         /// <summary>後続同一サービス時、同一ファイルで録画</summary>
         public byte ContinueRecFlag;
         /// <summary>物理CHに部分受信サービスがある場合、同時録画するかどうか</summary>
@@ -131,17 +137,16 @@ namespace EpgTimer
         public uint TunerID;
         /// <summary>部分受信サービス録画のフォルダ</summary>
         public List<RecFileSetInfo> PartialRecFolder = new List<RecFileSetInfo>();
-
         public void Write(MemoryStream s, ushort version)
         {
             var w = new CtrlCmdWriter(s, version);
             w.Begin();
-            w.Write(RecMode);
+            w.Write((byte)(IsEnable ? RecMode : 5 + (RecMode + 4) % 5));
             w.Write(Priority);
             w.Write(TuijyuuFlag);
             w.Write(ServiceMode);
             w.Write(PittariFlag);
-            w.Write(BatFilePath);
+            w.Write(PackBatFilePath());
             w.Write(RecFolderList);
             w.Write(SuspendMode);
             w.Write(RebootFlag);
@@ -162,11 +167,14 @@ namespace EpgTimer
             var r = new CtrlCmdReader(s, version);
             r.Begin();
             r.Read(ref RecMode);
+            IsEnable = RecMode / 5 % 2 == 0;
+            RecMode = (byte)((RecMode + RecMode / 5 % 2) % 5);
             r.Read(ref Priority);
             r.Read(ref TuijyuuFlag);
             r.Read(ref ServiceMode);
             r.Read(ref PittariFlag);
             r.Read(ref BatFilePath);
+            UnPackBatFilePath(BatFilePath);
             r.Read(ref RecFolderList);
             r.Read(ref SuspendMode);
             r.Read(ref RebootFlag);
@@ -182,20 +190,27 @@ namespace EpgTimer
             }
             r.End();
         }
-        /// <summary>無効かどうか</summary>
-        public bool IsNoRec()
+        public object DeepCloneObj()
         {
-            return RecMode / 5 % 2 != 0;
+            var other = (RecSettingData)MemberwiseClone();
+            other.PartialRecFolder = PartialRecFolder.DeepClone();   //RecFileSetInfo
+            other.RecFolderList = RecFolderList.DeepClone();         //RecFileSetInfo
+            return other;
         }
-        /// <summary>RecModeの録画モード情報のみ</summary>
-        public byte GetRecMode()
+        public string PackBatFilePath()
         {
-            return (byte)((RecMode + RecMode / 5 % 2) % 5);
+            return BatFilePath + (string.IsNullOrEmpty(RecTag) == true ? "" : ("*" + RecTag));
+        }
+        public void UnPackBatFilePath(string s)
+        {
+            string[] unPacked = s.Split(new[] { '*' }, 2);
+            BatFilePath = unPacked[0];
+            RecTag = unPacked.Length == 2 ? unPacked[1] : "";
         }
     }
 
     /// <summary>登録予約情報</summary>
-    public class ReserveData : ICtrlCmdReadWrite
+    public partial class ReserveData : ICtrlCmdReadWrite, IDeepCloneObj
     {
         /// <summary>番組名</summary>
         public string Title = "";
@@ -288,9 +303,16 @@ namespace EpgTimer
             }
             r.End();
         }
+        public object DeepCloneObj()
+        {
+            var other = (ReserveData)MemberwiseClone();
+            other.RecSetting = RecSetting.DeepClone();               //RecSettingData
+            other.RecFileNameList = RecFileNameList.ToList();
+            return other;
+        }
     }
 
-    public class RecFileInfo : ICtrlCmdReadWrite
+    public partial class RecFileInfo : ICtrlCmdReadWrite, IDeepCloneObj
     {
         /// <summary>ID</summary>
         public uint ID;
@@ -323,11 +345,10 @@ namespace EpgTimer
         /// <summary>コメント</summary>
         public string Comment = "";
         /// <summary>.program.txtファイルの内容</summary>
-        public string ProgramInfo = "";
+        public string _ProgramInfo = "";
         /// <summary>.errファイルの内容</summary>
-        public string ErrInfo = "";
+        public string _ErrInfo = "";
         public byte ProtectFlag;
-
         public void Write(MemoryStream s, ushort version)
         {
             var w = new CtrlCmdWriter(s, version);
@@ -347,8 +368,8 @@ namespace EpgTimer
             w.Write(RecStatus);
             w.Write(StartTimeEpg);
             w.Write(Comment);
-            w.Write(ProgramInfo);
-            w.Write(ErrInfo);
+            w.Write(_ProgramInfo);
+            w.Write(_ErrInfo);
             if (version >= 4)
             {
                 w.Write(ProtectFlag);
@@ -374,14 +395,15 @@ namespace EpgTimer
             r.Read(ref RecStatus);
             r.Read(ref StartTimeEpg);
             r.Read(ref Comment);
-            r.Read(ref ProgramInfo);
-            r.Read(ref ErrInfo);
+            r.Read(ref _ProgramInfo);
+            r.Read(ref _ErrInfo);
             if (version >= 4)
             {
                 r.Read(ref ProtectFlag);
             }
             r.End();
         }
+        public object DeepCloneObj() { return MemberwiseClone(); }
     }
 
     public class TunerReserveInfo : ICtrlCmdReadWrite
@@ -459,7 +481,7 @@ namespace EpgTimer
     }
 
     /// <summary>EPGジャンルデータ</summary>
-    public class EpgContentData : ICtrlCmdReadWrite
+    public partial class EpgContentData : ICtrlCmdReadWrite, IDeepCloneObj
     {
         public byte content_nibble_level_1;
         public byte content_nibble_level_2;
@@ -486,10 +508,7 @@ namespace EpgTimer
             r.Read(ref user_nibble_2);
             r.End();
         }
-        public EpgContentData DeepClone()
-        {
-            return (EpgContentData)MemberwiseClone();
-        }
+        public object DeepCloneObj() { return MemberwiseClone(); }
     }
 
     /// <summary>EPGジャンル情報</summary>
@@ -668,7 +687,7 @@ namespace EpgTimer
         }
     }
 
-    public class EpgEventInfo : ICtrlCmdReadWrite
+    public partial class EpgEventInfo : ICtrlCmdReadWrite
     {
         public ushort original_network_id;
         public ushort transport_stream_id;
@@ -699,7 +718,6 @@ namespace EpgTimer
         public EpgEventGroupInfo EventRelayInfo = null;
         /// <summary>ノンスクランブルフラグ</summary>
         public byte FreeCAFlag;
-
         public void Write(MemoryStream s, ushort version)
         {
             var w = new CtrlCmdWriter(s, version);
@@ -849,7 +867,7 @@ namespace EpgTimer
         }
     }
 
-    public class EpgServiceInfo : ICtrlCmdReadWrite
+    public partial class EpgServiceInfo : ICtrlCmdReadWrite
     {
         public ushort ONID;
         public ushort TSID;
@@ -919,7 +937,7 @@ namespace EpgTimer
         }
     }
 
-    public class EpgSearchDateInfo : ICtrlCmdReadWrite
+    public class EpgSearchDateInfo : ICtrlCmdReadWrite, IDeepCloneObj
     {
         public byte startDayOfWeek;
         public ushort startHour;
@@ -952,17 +970,15 @@ namespace EpgTimer
             r.Read(ref endMin);
             r.End();
         }
-        public EpgSearchDateInfo DeepClone()
-        {
-            return (EpgSearchDateInfo)MemberwiseClone();
-        }
+        public object DeepCloneObj() { return MemberwiseClone(); }
     }
 
     /// <summary>検索条件</summary>
-    public class EpgSearchKeyInfo : ICtrlCmdReadWrite
+    public class EpgSearchKeyInfo : ICtrlCmdReadWrite, IDeepCloneObj
     {
         public string andKey = "";
         public string notKey = "";
+        public string note = "";
         public int regExpFlag;
         public int titleOnlyFlag;
         public List<EpgContentData> contentList = new List<EpgContentData>();
@@ -978,13 +994,42 @@ namespace EpgTimer
         public byte chkRecEnd;
         /// <summary>(自動予約登録の条件専用)録画済かのチェック対象期間</summary>
         public ushort chkRecDay = 6;
+        /// <summary>(自動予約登録の条件専用)録画済かのチェックの際、同一サービスのチェックを省略する</summary>
+        public byte chkRecNoService;
+        /// <summary>最低番組長(分/0は無制限)</summary>
+        public ushort chkDurationMin;
+        /// <summary>最大番組長(分/0は無制限)</summary>
+        public ushort chkDurationMax;
+
+        //以下は、EpgTimerSrv側ではandKeyへの装飾で処理しているので、ここで吸収する。
+        //ほかのフラグに合わせ、byte型にしておく。
+        /// <summary>大文字小文字を区別する</summary>
+        public byte caseFlag;
+        /// <summary>自動登録を無効にする</summary>
+        public byte keyDisabledFlag;
 
         public void Write(MemoryStream s, ushort version)
         {
+            //装飾フラグをここで処理
+            ushort chkRecDay_Send = (ushort)((chkRecNoService != 0 ? 40000 : 0) + chkRecDay % 10000);
+
+            string andKey_Send = (chkDurationMin > 0 || chkDurationMax > 0 ?
+                "D!{" + ((10000 + Math.Min((int)chkDurationMin, 9999)) * 10000 + Math.Min((int)chkDurationMax, 9999)) + "}" : "") + andKey;
+            andKey_Send = (caseFlag == 1 ? "C!{999}" : "") + andKey_Send;
+            andKey_Send = (keyDisabledFlag == 1 ? "^!{999}" : "") + andKey_Send;
+
+            //メモの処理
+            string notKey_Send = notKey;
+            if (note.Length > 0)
+            {
+                notKey_Send = ":note:" + note.Replace("\\", "\\\\").Replace(" ", "\\s").Replace("　", "\\m") +
+                             (notKey.Length > 0 ? " " + notKey : "");
+            }
+
             var w = new CtrlCmdWriter(s, version);
             w.Begin();
-            w.Write(andKey);
-            w.Write(notKey);
+            w.Write(andKey_Send);
+            w.Write(notKey_Send);
             w.Write(regExpFlag);
             w.Write(titleOnlyFlag);
             w.Write(contentList);
@@ -999,7 +1044,7 @@ namespace EpgTimer
             if (version >= 3)
             {
                 w.Write(chkRecEnd);
-                w.Write(chkRecDay);
+                w.Write(chkRecDay_Send);
             }
             w.End();
         }
@@ -1027,30 +1072,53 @@ namespace EpgTimer
             }
             if (version >= 5 && r.RemainSize() >= 5)
             {
-                byte recNoService = 0;
-                r.Read(ref recNoService);
-                if (recNoService != 0)
-                {
-                    chkRecDay = (ushort)(chkRecDay % 10000 + 40000);
-                }
-                ushort durMin = 0;
-                ushort durMax = 0;
-                r.Read(ref durMin);
-                r.Read(ref durMax);
-                if (durMin > 0 || durMax > 0)
-                {
-                    andKey = andKey.Insert(
-                        System.Text.RegularExpressions.Regex.Match(andKey, @"^(?:\^!\{999\})?(?:C!\{999\})?").Length,
-                        "D!{" + ((10000 + Math.Min((int)durMin, 9999)) * 10000 + Math.Min((int)durMax, 9999)) + "}");
-                }
+                r.Read(ref chkRecNoService);
+                r.Read(ref chkDurationMin);
+                r.Read(ref chkDurationMax);
             }
             r.End();
+
+            //装飾フラグをここで処理
+            if (chkRecDay >= 40000)
+            {
+                chkRecNoService = (byte)(chkRecDay >= 40000 ? 1 : 0);
+                chkRecDay %= 10000;
+            }
+
+            if (andKey.StartsWith("^!{999}", StringComparison.Ordinal) == true)//"^!{999}"が前
+            {
+                keyDisabledFlag = 1;
+                andKey = andKey.Substring(7);
+            }
+            if (andKey.StartsWith("C!{999}", StringComparison.Ordinal) == true)
+            {
+                caseFlag = 1;
+                andKey = andKey.Substring(7);
+            }
+            if (andKey.Length > 13 && andKey.StartsWith("D!{1", StringComparison.Ordinal) == true && andKey[12] == '}')
+            {
+                uint dur = 0;
+                uint.TryParse(andKey.Substring(4, 8), out dur);
+                andKey = andKey.Substring(13);
+                chkDurationMin = (ushort)(dur / 10000);
+                chkDurationMax = (ushort)(dur % 10000);
+            }
+            //メモを分離
+            var m = Regex.Match(notKey, "^:note:([^ 　]*)[ 　]?(.*)");
+            if (m.Success)
+            {
+                notKey = m.Groups[2].Value;
+                note = m.Groups[1].Value.Replace("\\s", " ").Replace("\\m", "　").Replace("\\\\", "\\");
+            }
+
+            //旧CS仮対応コード(+0x70)の処置
+            EpgContentData.FixNibble(contentList);
         }
-        public EpgSearchKeyInfo DeepClone()
+        public object DeepCloneObj()
         {
             var other = (EpgSearchKeyInfo)MemberwiseClone();
-            other.contentList = contentList.Select(a => a.DeepClone()).ToList();
-            other.dateList = dateList.Select(a => a.DeepClone()).ToList();
+            other.contentList = contentList.DeepClone();
+            other.dateList = dateList.DeepClone();
             other.serviceList = serviceList.ToList();
             other.videoList = videoList.ToList();
             other.audioList = audioList.ToList();
@@ -1085,7 +1153,7 @@ namespace EpgTimer
     }
 
     /// <summary>自動予約登録情報</summary>
-    public class EpgAutoAddData : ICtrlCmdReadWrite
+    public partial class EpgAutoAddData : ICtrlCmdReadWrite, IDeepCloneObj
     {
         public uint dataID;
         /// <summary>検索キー</summary>
@@ -1121,9 +1189,16 @@ namespace EpgTimer
             }
             r.End();
         }
+        public override object DeepCloneObj()
+        {
+            var other = (EpgAutoAddData)MemberwiseClone();
+            other.recSetting = recSetting.DeepClone();       //RecSettingData
+            other.searchInfo = searchInfo.DeepClone();       //EpgSearchKeyInfo
+            return other;
+        }
     }
 
-    public class ManualAutoAddData : ICtrlCmdReadWrite
+    public partial class ManualAutoAddData : ICtrlCmdReadWrite, IDeepCloneObj
     {
         public uint dataID;
         /// <summary>対象曜日</summary>
@@ -1145,15 +1220,23 @@ namespace EpgTimer
         /// <summary>録画設定</summary>
         public RecSettingData recSetting = new RecSettingData();
 
+        //以下は、titleを装飾してEpgTimer側で実装する。
+        /// <summary>自動登録を無効にする</summary>
+        public byte keyDisabledFlag;
+
         public void Write(MemoryStream s, ushort version)
         {
+            //andKey装飾のフラグをここで処理。dayOfWeekFlagをtitleに移動して保存。
+            string title_Send = (keyDisabledFlag == 1 ? "^!{999}" + string.Format("[{0,0:X2}]", dayOfWeekFlag) : "") + title;
+            byte dayOfWeekFlag_Send = (byte)(keyDisabledFlag == 1 ? 0 : dayOfWeekFlag);
+
             var w = new CtrlCmdWriter(s, version);
             w.Begin();
             w.Write(dataID);
-            w.Write(dayOfWeekFlag);
+            w.Write(dayOfWeekFlag_Send);
             w.Write(startTime);
             w.Write(durationSecond);
-            w.Write(title);
+            w.Write(title_Send);
             w.Write(stationName);
             w.Write(originalNetworkID);
             w.Write(transportStreamID);
@@ -1176,6 +1259,20 @@ namespace EpgTimer
             r.Read(ref serviceID);
             r.Read(ref recSetting);
             r.End();
+
+            //andKey装飾のフラグをここで処理
+            if (title.StartsWith("^!{999}") == true)
+            {
+                keyDisabledFlag = 1;
+                byte.TryParse(title.Substring(8, 2), System.Globalization.NumberStyles.AllowHexSpecifier, null, out dayOfWeekFlag);
+                title = title.Substring(11);
+            }
+        }
+        public override object DeepCloneObj()
+        {
+            var other = (ManualAutoAddData)MemberwiseClone();
+            other.recSetting = recSetting.DeepClone();       //RecSettingData
+            return other;
         }
     }
 

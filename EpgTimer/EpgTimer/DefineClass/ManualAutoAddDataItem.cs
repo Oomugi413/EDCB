@@ -1,105 +1,98 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Windows.Media;
 
 namespace EpgTimer
 {
-    public class ManualAutoAddDataItem
+    public class ManualAutoAddDataItem : AutoAddDataItemT<ManualAutoAddData>
     {
-        public ManualAutoAddDataItem(ManualAutoAddData item)
-        {
-            this.ManualAutoAddInfo = item;
-        }
+        public ManualAutoAddDataItem() { }
+        public ManualAutoAddDataItem(ManualAutoAddData item) : base(item) { }
 
-        public ManualAutoAddData ManualAutoAddInfo
-        {
-            get;
-            private set;
-        }
+        public ManualAutoAddData ManualAutoAddInfo { get { return (ManualAutoAddData)Data; } set { Data = value; } }
+        public override bool IsManual { get { return true; } }
 
         public string DayOfWeek
         {
             get
             {
                 string view = "";
+                byte dayOfWeekFlag = GetWeekFlgMod();
                 for (int i = 0; i < 7; i++)
                 {
-                    if ((ManualAutoAddInfo.dayOfWeekFlag & (0x01 << i)) != 0)
+                    if ((dayOfWeekFlag & 0x01) != 0)
                     {
-                        view += (new DateTime(2000, 1, 2 + i)).ToString("ddd");
+                        view += CommonManager.DayOfWeekArray[i];
                     }
+                    dayOfWeekFlag >>= 1;
                 }
                 return view;
             }
         }
-
-        public string Time
+        public double DayOfWeekValue
         {
             get
             {
-                return (new DateTime(2000, 1, 2)).AddSeconds(ManualAutoAddInfo.startTime).ToString("HH\\:mm\\:ss ～ ") +
-                       (new DateTime(2000, 1, 2)).AddSeconds(ManualAutoAddInfo.startTime + ManualAutoAddInfo.durationSecond).ToString("HH\\:mm\\:ss");
+                int ret = 0;
+                byte dayOfWeekFlag = GetWeekFlgMod();
+                for (int i = 1; i <= 7; i++)
+                {
+                    if ((dayOfWeekFlag & 0x01) != 0)
+                    {
+                        ret = 10 * ret + i;
+                    }
+                    dayOfWeekFlag >>= 1;
+                }
+                return ret * Math.Pow(10, (7 - ret.ToString().Length));
             }
         }
-
-        public string Title
+        private byte GetWeekFlgMod()
         {
-            get { return ManualAutoAddInfo.title; }
+            if (Settings.Instance.LaterTimeUse == true && DateTime28.IsLateHour(ManualAutoAddInfo.PgStartTime.Hour) == true)
+            {
+                return ManualAutoAddData.ShiftWeekFlag(ManualAutoAddInfo.dayOfWeekFlag, -1);
+            }
+            return ManualAutoAddInfo.dayOfWeekFlag;
         }
-
-        public string StationName
+        public string StartTime
+        {
+            get { return CommonManager.ConvertTimeText(ManualAutoAddInfo.PgStartTime, ManualAutoAddInfo.durationSecond, true, Settings.Instance.ResInfoNoSecond, true, true, Settings.Instance.ResInfoNoEnd); }
+        }
+        public uint StartTimeValue
+        {
+            get { return ManualAutoAddInfo.startTime; }
+        }
+        public string StartTimeShort
+        {
+            get { return CommonManager.ConvertTimeText(ManualAutoAddInfo.PgStartTime, ManualAutoAddInfo.durationSecond, true, true, true, true); }
+        }
+        public string Duration
+        {
+            get { return CommonManager.ConvertDurationText(ManualAutoAddInfo.PgDurationSecond, Settings.Instance.ResInfoNoDurSecond); }
+        }
+        public uint DurationValue
+        {
+            get { return ManualAutoAddInfo.PgDurationSecond; }
+        }
+        public override string NetworkName
+        {
+            get { return CommonManager.ConvertNetworkNameText(ManualAutoAddInfo.originalNetworkID); }
+        }
+        public override string ServiceName
         {
             get { return ManualAutoAddInfo.stationName; }
         }
-
-        public string RecEnabled
+        public override string ConvertInfoText(object param = null)
         {
-            get { return ManualAutoAddInfo.recSetting.IsNoRec() ? "いいえ" : "はい"; }
-        }
+            string view = "番組名 : " + EventName + "\r\n";
+            view += "曜日 : " + DayOfWeek + "\r\n";
+            view += "時間 : " + CommonManager.ConvertTimeText(ManualAutoAddInfo.PgStartTime, ManualAutoAddInfo.durationSecond, true, false, true, true) + "\r\n";
+            view += "サービス : " + ServiceName + "(" + NetworkName + ")" + "\r\n";
+            view += "自動登録 : " + CommonManager.ConvertIsEnableText(KeyEnabled) + "\r\n\r\n";
 
-        public string RecMode
-        {
-            get { return CommonManager.Instance.RecModeList[ManualAutoAddInfo.recSetting.GetRecMode()]; }
-        }
+            view += "【録画設定】\r\n" + ConvertRecSettingText() + "\r\n\r\n";
 
-        public byte Priority
-        {
-            get { return ManualAutoAddInfo.recSetting.Priority; }
-        }
-
-        public string TunerID
-        {
-            get { return ManualAutoAddInfo.recSetting.TunerID == 0 ? "自動" : "ID:" + ManualAutoAddInfo.recSetting.TunerID.ToString("X8"); }
-        }
-
-        public string BatFilePath
-        {
-            get
-            {
-                int i = ManualAutoAddInfo.recSetting.BatFilePath.IndexOf('*');
-                return i < 0 ? ManualAutoAddInfo.recSetting.BatFilePath : ManualAutoAddInfo.recSetting.BatFilePath.Remove(i);
-            }
-        }
-
-        public string BatFileTag
-        {
-            get
-            {
-                int i = ManualAutoAddInfo.recSetting.BatFilePath.IndexOf('*');
-                return i < 0 ? "" : ManualAutoAddInfo.recSetting.BatFilePath.Substring(i + 1);
-            }
-        }
-
-        public uint ID
-        {
-            get { return ManualAutoAddInfo.dataID; }
-        }
-
-        public SolidColorBrush BackColor
-        {
-            get { return Settings.BrushCache.ResDefBrush; }
+            view += "プログラム自動予約ID : " + string.Format("{0} (0x{0:X})", DisplayID);
+            return view;
         }
     }
+
 }

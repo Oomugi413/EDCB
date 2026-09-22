@@ -1,13 +1,19 @@
-﻿<!-- .NET 9以降 ThemeMode="System" 属性をつけるとFluentテーマになる -->
-<Application x:Class="EpgTimer.App"
+﻿<Application x:Class="EpgTimer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:EpgTimer"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <!-- UiLayoutStylesはデザイン時用。最初のスタイル適用で一度上書きされる。 -->
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/App.rd.xaml" />
+                <ResourceDictionary Source="Style\UiLayoutStyles.xaml"/>
+                <ResourceDictionary Source="Style\DataListViewStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <local:BoolInverter x:Key="invert" />
+            <local:BoolConverter x:Key="convert" />
+            <local:ValueChecker x:Key="vcheck" />
+            <local:StringSelector x:Key="selector" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

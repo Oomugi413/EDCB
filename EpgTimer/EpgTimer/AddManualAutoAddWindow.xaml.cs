@@ -1,191 +1,190 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace EpgTimer
 {
     /// <summary>
     /// AddManualAutoAddWindow.xaml の相互作用ロジック
     /// </summary>
-    public partial class AddManualAutoAddWindow : Window
+    public partial class AddManualAutoAddWindow : AddManualAutoAddWindowBase
     {
-        private ManualAutoAddData defKey = null;
+        protected override DataItemViewBase DataView { get { return mainWindow.autoAddView.manualAutoAddView; } }
+        protected override string AutoAddString { get { return "プログラム予約登録"; } }
 
-        public AddManualAutoAddWindow()
+        private List<CheckBox> chbxList;
+
+        static AddManualAutoAddWindow()
+        {
+            //追加時の選択用
+            mainWindow.autoAddView.manualAutoAddView.ViewUpdated += AddManualAutoAddWindow.UpdatesViewSelection;
+        }
+        public AddManualAutoAddWindow(ManualAutoAddData data = null, AutoAddMode mode = AutoAddMode.NewAdd)
+            : base(data, mode)
         {
             InitializeComponent();
 
+            try
             {
-                comboBox_startHH.ItemsSource = Enumerable.Range(0, 24);
+                base.SetParam(false, checkBox_windowPinned, checkBox_dataReplace);
+
+                //コマンドの登録
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.Cancel, (sender, e) => this.Close()));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.AddInDialog, autoadd_add));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.ChangeInDialog, autoadd_chg, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.DeleteInDialog, autoadd_del1, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.Delete2InDialog, autoadd_del2, (sender, e) => e.CanExecute = winMode == AutoAddMode.Change));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.BackItem, (sender, e) => MoveViewNextItem(-1)));
+                this.CommandBindings.Add(new CommandBinding(EpgCmds.NextItem, (sender, e) => MoveViewNextItem(1)));
+
+                //ボタンの設定
+                mBinds.SetCommandToButton(button_cancel, EpgCmds.Cancel);
+                mBinds.SetCommandToButton(button_chg, EpgCmds.ChangeInDialog);
+                mBinds.SetCommandToButton(button_add, EpgCmds.AddInDialog);
+                mBinds.SetCommandToButton(button_del, EpgCmds.DeleteInDialog);
+                mBinds.SetCommandToButton(button_del2, EpgCmds.Delete2InDialog);
+                mBinds.SetCommandToButton(button_up, EpgCmds.BackItem);
+                mBinds.SetCommandToButton(button_down, EpgCmds.NextItem);
+                RefreshMenu();
+
+                //ステータスバーの登録
+                this.statusBar.Status.Visibility = Visibility.Collapsed;
+                StatusManager.RegisterStatusbar(this.statusBar, this);
+
+                //その他設定
+                chbxList = CommonManager.DayOfWeekArray.Select(wd => 
+                    new CheckBox { Content = wd, Margin = new Thickness(0, 0, 6, 0) }).ToList();
+                chbxList.ForEach(chbx => stackPanel_week.Children.Add(chbx));
+
+                comboBox_startHH.ItemsSource = CommonManager.CustomHourList;
                 comboBox_startHH.SelectedIndex = 0;
                 comboBox_startMM.ItemsSource = Enumerable.Range(0, 60);
                 comboBox_startMM.SelectedIndex = 0;
                 comboBox_startSS.ItemsSource = Enumerable.Range(0, 60);
                 comboBox_startSS.SelectedIndex = 0;
-                comboBox_endHH.ItemsSource = Enumerable.Range(0, 24);
+                comboBox_endHH.ItemsSource = CommonManager.CustomHourList;
                 comboBox_endHH.SelectedIndex = 0;
                 comboBox_endMM.ItemsSource = Enumerable.Range(0, 60);
                 comboBox_endMM.SelectedIndex = 0;
                 comboBox_endSS.ItemsSource = Enumerable.Range(0, 60);
                 comboBox_endSS.SelectedIndex = 0;
+                ViewUtil.Set_ComboBox_LostFocus_SelectItemUInt(panel_times);
 
-                comboBox_service.ItemsSource = ChSet5.Instance.ChListSelected;
+                comboBox_service.ItemsSource = ChSet5.ChListSelected;
                 comboBox_service.SelectedIndex = 0;
 
                 recSettingView.SetViewMode(false);
             }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
         }
 
-        private void button_add_Click(object sender, RoutedEventArgs e)
+        public override void SetWindowTitle()
         {
-            var item = new ManualAutoAddData();
-
-            item.dayOfWeekFlag = (byte)((checkBox_week0.IsChecked == true ? 0x01 : 0) |
-                                        (checkBox_week1.IsChecked == true ? 0x02 : 0) |
-                                        (checkBox_week2.IsChecked == true ? 0x04 : 0) |
-                                        (checkBox_week3.IsChecked == true ? 0x08 : 0) |
-                                        (checkBox_week4.IsChecked == true ? 0x10 : 0) |
-                                        (checkBox_week5.IsChecked == true ? 0x20 : 0) |
-                                        (checkBox_week6.IsChecked == true ? 0x40 : 0));
-
-            item.startTime = (uint)(comboBox_startHH.SelectedIndex * 60 * 60 + comboBox_startMM.SelectedIndex * 60 + comboBox_startSS.SelectedIndex);
-            item.durationSecond = ((uint)(comboBox_endHH.SelectedIndex * 60 * 60 + comboBox_endMM.SelectedIndex * 60 + comboBox_endSS.SelectedIndex) +
-                                   24 * 60 * 60 - item.startTime) % (24 * 60 * 60);
-
-            item.title = textBox_title.Text;
-
-            ChSet5Item chItem = comboBox_service.SelectedItem as ChSet5Item;
-            if (chItem != null)
-            {
-                item.stationName = chItem.ServiceName;
-                item.originalNetworkID = chItem.ONID;
-                item.transportStreamID = chItem.TSID;
-                item.serviceID = chItem.SID;
-            }
-            else if (defKey != null)
-            {
-                item.stationName = defKey.stationName;
-                item.originalNetworkID = defKey.originalNetworkID;
-                item.transportStreamID = defKey.transportStreamID;
-                item.serviceID = defKey.serviceID;
-            }
-            else
-            {
-                MessageBox.Show("サービスが未選択です");
-                return;
-            }
-            item.recSetting = recSettingView.GetRecSetting();
-
-            if (defKey != null)
-            {
-                item.dataID = defKey.dataID;
-                CommonManager.CreateSrvCtrl().SendChgManualAdd(new List<ManualAutoAddData>() { item });
-            }
-            else
-            {
-                CommonManager.CreateSrvCtrl().SendAddManualAdd(new List<ManualAutoAddData>() { item });
-            }
-            Close();
+            this.Title = ViewUtil.WindowTitleText(textBox_title.Text, "プログラム自動予約登録");
         }
 
-        /// <summary>
-        /// 自動登録情報をセットし、ウィンドウを変更モードにする
-        /// </summary>
-        public void SetChangeModeData(ManualAutoAddData item)
+        protected override bool ReloadInfoData()
         {
-            defKey = item;
-            button_add.Content = "変更";
-
-            {
-                if ((defKey.dayOfWeekFlag & 0x01) != 0)
-                {
-                    checkBox_week0.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x02) != 0)
-                {
-                    checkBox_week1.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x04) != 0)
-                {
-                    checkBox_week2.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x08) != 0)
-                {
-                    checkBox_week3.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x10) != 0)
-                {
-                    checkBox_week4.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x20) != 0)
-                {
-                    checkBox_week5.IsChecked = true;
-                }
-                if ((defKey.dayOfWeekFlag & 0x40) != 0)
-                {
-                    checkBox_week6.IsChecked = true;
-                }
-
-                DateTime startTime = (new DateTime(2000, 1, 2)).AddSeconds(defKey.startTime);
-                comboBox_startHH.SelectedIndex = startTime.Hour;
-                comboBox_startMM.SelectedIndex = startTime.Minute;
-                comboBox_startSS.SelectedIndex = startTime.Second;
-
-                DateTime endTime = startTime.AddSeconds(defKey.durationSecond);
-                comboBox_endHH.SelectedIndex = endTime.Hour;
-                comboBox_endMM.SelectedIndex = endTime.Minute;
-                comboBox_endSS.SelectedIndex = endTime.Second;
-
-                textBox_title.Text = defKey.title;
-
-                comboBox_service.SelectedItem = comboBox_service.Items.Cast<ChSet5Item>().FirstOrDefault(ch =>
-                    ch.ONID == defKey.originalNetworkID &&
-                    ch.TSID == defKey.transportStreamID &&
-                    ch.SID == defKey.serviceID);
-                defKey.recSetting.PittariFlag = 0;
-                defKey.recSetting.TuijyuuFlag = 0;
-                recSettingView.SetDefSetting(defKey.recSetting);
-            }
+            recSettingView.RefreshView();
+            return true;
         }
 
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        public override AutoAddData GetData()
         {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
+            try
             {
-                switch (e.Key)
-                {
-                    case Key.S:
-                        // バインディング更新のためフォーカスを移す
-                        button_add.Focus();
-                        button_add.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                        e.Handled = true;
-                        break;
-                }
-            }
-            else if (Keyboard.Modifiers == ModifierKeys.None)
-            {
-                switch (e.Key)
-                {
-                    case Key.Escape:
-                        Close();
-                        e.Handled = true;
-                        break;
-                }
-            }
-        }
+                var data = new ManualAutoAddData();
+                data.dataID = (uint)dataID;
 
-        private void button_cancel_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
+                uint startTime = ((uint)comboBox_startHH.SelectedIndex * 60 * 60) + ((uint)comboBox_startMM.SelectedIndex * 60) + (uint)comboBox_startSS.SelectedIndex;
+                uint endTime = ((uint)comboBox_endHH.SelectedIndex * 60 * 60) + ((uint)comboBox_endMM.SelectedIndex * 60) + (uint)comboBox_endSS.SelectedIndex;
+                while (endTime < startTime) endTime += 24 * 60 * 60;
+                uint duration = endTime - startTime;
+                if (duration >= 24 * 60 * 60)
+                {
+                    //深夜時間帯の処理の関係で、不可条件が新たに発生しているため、その対応。
+                    MessageBox.Show("24時間以上の録画時間は設定出来ません。", "録画時間長の確認", MessageBoxButton.OK);
+                    return null;
+                }
+
+                data.startTime = startTime;
+                data.durationSecond = duration;
+
+                //曜日の処理、0～6bit目:日～土
+                data.dayOfWeekFlag = 0;
+                int val = 0;
+                chbxList.ForEach(chbx => data.dayOfWeekFlag |= (byte)((chbx.IsChecked == true ? 0x01 : 0x00) << val++));
+
+                //開始時刻を0～24時に調整する。
+                data.RegulateData();
+
+                data.IsEnabled = checkBox_keyDisabled.IsChecked != true;
+
+                data.title = textBox_title.Text;
+
+                var chItem = comboBox_service.SelectedItem as EpgServiceInfo;
+                data.stationName = chItem.service_name;
+                data.originalNetworkID = chItem.ONID;
+                data.transportStreamID = chItem.TSID;
+                data.serviceID = chItem.SID;
+                data.recSetting = recSettingView.GetRecSetting();
+
+                return data;
+            }
+            catch (Exception ex) { MessageBox.Show(ex.ToString()); }
+            return null;
         }
+        protected override bool SetData(ManualAutoAddData data)
+        {
+            if (data == null) return false;
+
+            data = data.DeepClone();
+            dataID = data.dataID;
+
+            //深夜時間帯の処理
+            if (Settings.Instance.LaterTimeUse == true && DateTime28.IsLateHour(data.PgStartTime.Hour) == true)
+            {
+                data.ShiftRecDay(-1);
+            }
+
+            //曜日の処理、0～6bit目:日～土
+            int val = 0;
+            chbxList.ForEach(chbx => chbx.IsChecked = (data.dayOfWeekFlag & (0x01 << val++)) != 0);
+
+            checkBox_keyDisabled.IsChecked = data.IsEnabled == false;
+
+            comboBox_startHH.SelectedIndex = (int)(data.startTime / (60 * 60));
+            comboBox_startMM.SelectedIndex = (int)((data.startTime % (60 * 60)) / 60);
+            comboBox_startSS.SelectedIndex = (int)(data.startTime % 60);
+
+            //深夜時間帯の処理も含む
+            uint endTime = data.startTime + data.durationSecond;
+            if (endTime >= comboBox_endHH.Items.Count * 60 * 60 || endTime >= 24 * 60 * 60
+                && DateTime28.JudgeLateHour(data.PgStartTime.AddSeconds(data.durationSecond), data.PgStartTime) == false)
+            {
+                //正規のデータであれば、必ず0～23時台かつstartTimeより小さくなる。
+                endTime -= 24 * 60 * 60;
+            }
+            comboBox_endHH.SelectedIndex = (int)(endTime / (60 * 60));
+            comboBox_endMM.SelectedIndex = (int)((endTime % (60 * 60)) / 60);
+            comboBox_endSS.SelectedIndex = (int)(endTime % 60);
+
+            textBox_title.Text = data.title;
+
+            comboBox_service.SelectedItem = ChSet5.ChItem(data.Create64Key());
+            if (comboBox_service.SelectedItem == null) comboBox_service.SelectedIndex = 0;
+
+            recSettingView.SetDefSetting(data.recSetting);
+
+            return true;
+        }
+    }
+    public class AddManualAutoAddWindowBase : AutoAddWindow<AddManualAutoAddWindow, ManualAutoAddData>
+    {
+        public AddManualAutoAddWindowBase() { }//デザイナ用
+        public AddManualAutoAddWindowBase(ManualAutoAddData data = null, AutoAddMode mode = AutoAddMode.Find) : base(data, mode) { }
     }
 }
