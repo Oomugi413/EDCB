@@ -66,10 +66,12 @@ private:
 	bool IsFindNoSuspendExe() const;
 #endif
 	//変更直前の予約を調整する
-	vector<RESERVE_DATA>& PreChgReserveData(vector<RESERVE_DATA>& reserveList) const;
-	void AutoAddReserveEPG(const EPG_AUTO_ADD_DATA& data, vector<RESERVE_DATA>& setList);
-	void AutoAddReserveProgram(const MANUAL_AUTO_ADD_DATA& data, vector<RESERVE_DATA>& setList) const;
-	//外部制御コマンド関係
+		vector<RESERVE_DATA>& PreChgReserveData(vector<RESERVE_DATA>& reserveList) const;
+		void AutoAddReserveEPG(const EPG_AUTO_ADD_DATA& data, vector<RESERVE_DATA>& setList);
+		void AutoAddReserveProgram(const MANUAL_AUTO_ADD_DATA& data, vector<RESERVE_DATA>& setList) const;
+		bool SyncChangeAutoAddReserveData(const vector<EPG_AUTO_ADD_DATA>& epgList, const vector<MANUAL_AUTO_ADD_DATA>& manualList);
+		void SyncDeleteAutoAddReserveData(const vector<DWORD>& epgIDList, const vector<DWORD>& manualIDList);
+		//外部制御コマンド関係
 	static void CtrlCmdCallback(CEpgTimerSrvMain* sys, const CCmdStream& cmd, CCmdStream& res, int threadIndex, bool tcpFlag, LPCWSTR clientIP);
 	bool CtrlCmdProcessCompatible(const CCmdStream& cmd, CCmdStream& res, LPCWSTR clientIP);
 	void InitLuaCallback(lua_State* L, LPCSTR serverRandom);

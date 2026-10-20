@@ -1,0 +1,92 @@
+EpgTimerの設定である自動予約登録に合わせて予約を変更するオプション、
+SyncResAutoAddChange
+SyncResAutoAddDelete
+SyncResAutoAddChgNewRes
+SyncResAutoAddChgKeepRecTag
+をlinuxでも使えるようにする方法を考えて、
+~/git/EDCB/.codex/linux_reserve_feature.md
+に提案して。
+
+現状、ファイルを書き換えないままではlinuxで通常使用は不可能であるという結論で大丈夫か。
+
+~/git/EDCB/.codex/linux_reserve_feature.md
+に基づくファイル変更を許可する。ただし、以下の条件に従うこと。
+
+・それぞれの変更ファイルごとに、元ファイルはファイル名を変更して保持し、元ファイル（名称変更）と新ファイル（名称維持）の2つを作成。
+・変更したファイルの新旧名称と、もとのコードへの復旧方法をまとめて
+~/git/EDCB/.codex/linux_reserve_codediff.md
+にまとめること。
+・変更した点を、linux_reserve_feature.mdと同様のフォーマットで、
+~/git/EDCB/.codex/linux_reserve_change.md
+にまとめること。
+・現在EDCBでは録画が進行中のため、**systemctlによるEDCBの再起動を絶対に行わない。**再起動を必要とするテストは、私（ユーザー）の承認後に行う。ただし、21時(JST)までは承認しない。
+
+現在実施した変更で、例えば、
+・放送局をすべて指定し、録画後実装batを指定しない
+EPG予約を追加して、4つの番組が指定されたとする。その後、このEPG予約を
+・放送局を1つ指定し、録画後実装batを指定する
+EPG予約に変更した場合、
+・3つの予約が削除
+・1つの予約にbatが追加
+となるようなオプションは
+SyncResAutoAddChange=1
+SyncResAutoAddDelete=1
+SyncResAutoAddChgNewRes=1
+SyncResAutoAddChgKeepRecTag=0
+で間違いないか。
+
+返答の内容は期待していた内容であり、修正は必要ない。
+現在の設定で、先述のオプションの場合、
+・複数のEPG予約によって番組予約がなっており、片方を削除した場合
+の動作はどのようになるか。
+
+現在起動しているEDCBに変更を反映させる方法を、実行するすべてのコマンドを添えて
+~/git/EDCB/.codex/load-new-feature.md
+に記載して。ただし、EDCBの初回起動では、ビルドとインストールが完了後、
+sudo systemctl start edcb
+にて起動したものとする。
+
+codex resume 019f0871-fad3-7e02-9e8b-a0eb7c43fb62
+
+~/git/KonomiTV にて、EDCBにて録画中かどうかを判別する機能が壊れている。KonomiTVは、linux_reserve_change.mdをする前は正常に動いていた。両方のフォルダを確認して、対処法を考えて
+~/git/EDCB/.codex/error-try2.md
+にまとめて。
+
+~/git/EDCB/.codex/error-try2.md
+に基づくファイル変更を許可する。ただし、以下の条件に従うこと。
+
+しかし、このエラーは30分の番組でもでているため、解消を望む。そこで、KonomiTVの録画ファイル監視・メタデータ解析コマンドを、NHK総合1・東京の番組を録画して、録画中の試験を行うこと。ただし、録画先は/mnt/recordingとし、必ず録画ファイルは作業終了後に消すこと。
+対処法を考えて
+~/git/EDCB/.codex/error-try2.md
+に追記して。
+
+codex resume 019f0871-fad3-7e02-9e8b-a0eb7c43fb62
+
+
+~/git/EDCB/.codex/konomilog.txt
+
+・それぞれの変更ファイルごとに、元ファイルはファイル名を変更して保持し、元ファイル（名称変更）と新ファイル（名称維持）の2つを作成。
+・変更したファイルの新旧名称と、もとのコードへの復旧方法をまとめて
+~/git/EDCB/.codex/try2_codediff.md
+にまとめること。
+・変更した点を、linux_reserve_feature.mdと同様のフォーマットで、
+~/git/EDCB/.codex/try2_change.md
+にまとめること。
+・現在EDCBでは録画が進行していないので、sudo systemctl restart edcb などの再起動コマンドを実行してよい。
+
+
+4:15から録画予定だったレインマン（吹替版）の録画開始処理に失敗している。EDCBや、Mirakurun(~/git/DMirakurun)のログを確認して、考えられる原因を
+~/git/EDCB/.codex/fail_record1.md
+にまとめること。
+・現在EDCBでは録画が進行中のため、**systemctlによるEDCBの再起動を絶対に行わない。**また、同様に**Mirakurunの再起動も行わない。**再起動を必要とするテストは、私（ユーザー）の承認後に行う。ただし、11時(JST)までは承認しない。
+
+Mirakurunは、sudo pm2 start mirakurun-serverで実行している。pm2のログを
+~/git/EDCB/.codex/mirakurunlog.txt
+に提示するので、それをふまえてfail_record1.mdに追記してほしい。
+とくに、正常に予約が進んでいる06:30からのマイノリティ・リポート（吹替版）との比較をお願いしたい。
+
+EDCBとMirakurunの接続は~/git/BonDriver_LinuxMirakc　にあるBondriverを/usr/local/lib/edcb　にコピーして使っている。EDCBやBondriverのソースも読みながら、さらに考えられる原因を考えて、fail_record1.mdに追記してほしい。
+二重予約としているものは、実際には二重ではなく、EDCBの"チューナーの起動に失敗したとき、ほかのチューナーで再試行する"設定に基づくものだと推察する。
+
+EDCBのデバッグログ、/var/local/edcb/EpgTimerSrvDebugLog.txtは確認したか？していないなら、同等のファイルを~/git/EDCB/.codex/EpgTimerSrvDebugLog.txt二コピーしたので読んで、考えられる原因を考えて、fail_record1.mdに追記してほしい。
+codex resume 019f0b12-daed-7093-b183-c758b45e7267
