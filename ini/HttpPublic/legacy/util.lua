@@ -85,6 +85,9 @@ ALWAYS_USE_HLS=true
 --※Android版Firefoxでは不具合があるため無効扱いになる
 USE_MP4_LLHLS=true
 
+--ffmpeg 6.1未満を使う場合はこれをtrueにすること
+XCODE_USING_OLD_TRANSCODER=false
+
 --倍速再生の倍率のリスト
 XCODE_FAST_RATES={
   0.5,
@@ -95,6 +98,19 @@ XCODE_FAST_RATES={
   2.0,
 }
 
+--次のトランスコードオプションの設定の中で参照できるキー
+XCODE_OPTIONS={
+  ffmpegYadifFunc=function(rate) return '-g 120 -vf yadif=0:-1:1'..(rate==1 and '' or ',setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:d setts=ts=TS/'..rate) end,
+  ffmpegPullupFunc=function(rate) return '-g 96 -vf pullup'..(rate==1 and '' or ',setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:d setts=ts=TS/'..rate)..' -r 24000/1001' end,
+  ffmpegMP4Output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
+  ffmpegMpegtsOutput={'m2t','-f mpegts -'},
+  ffmpegEditorFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:d setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:d:i:304? -max_interleave_delta 300k -f mpegts -' end,
+  hwenccVppDeintFunc=function(rate) return (rate==1 and '' or '--fps '..math.floor(30000*rate+0.5)..'/1001 ')..'--gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
+  hwenccVppDecimateFunc=function(rate) return (rate==1 and '' or '--fps '..math.floor(30000*rate+0.5)..'/1001 ')..'--gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
+  hwenccMP4Output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
+  hwenccMpegtsOutput={'m2t','-f mpegts -o -'},
+}
+
 --トランスコードオプション
 --HLSのときはセグメント長約4秒、最大8MBytes(=1秒あたり16Mbits)を想定しているので、オプションもそれに合わせること
 --HLSでないときはフラグメントMP4などを使ったプログレッシブダウンロード。字幕は適当な重畳手法がまだないので未対応
@@ -103,10 +119,11 @@ XCODE_FAST_RATES={
 --       Windows以外では".exe"が除去されて最終候補のみ参照される
 --option:$OUTPUTは必須、再生時に適宜置換される。標準入力からMPEG2-TSを受け取るようにオプションを指定する
 --poster:初期画像のサイズとメッセージ。省略時は'1280x720,Loading...'
---filter(Cinema):等速再生用、filterCinemaは未定義でもよい。特別に':'とするとトランスコードを省略してそのまま出力する
---filter*FastFunc:倍速再生用、未定義でもよい。倍率に応じたオプションを返す関数を指定する
+--filter(Cinema):倍速再生に対応する場合は倍率に応じたオプションを返す関数を、等速のみのときはオプションの文字列を指定する
+--               filterCinemaは未定義でもよい。特別に':'とするとトランスコードを省略してそのまま出力する
 --editorFast:単独で倍速再生にできないトランスコーダーの手前に置く編集コマンド。指定方法はxcoderと同様
 --editorOptionFastFunc:標準入出力ともにMPEG2-TSで倍速再生になるようにオプションを返す関数を指定する
+--passthroughCaption:字幕データを無変換でそのままトランスコーダーに渡す
 --autoCinema:TS-Live!方式専用。Cinema(逆テレシネ)モードを自動切り替え
 --deinterlace:TS-Live!方式専用。デインタレース方式。'none'か'yadif[=1]'か'bwdif[=1]'
 --maxRateForDoubling:TS-Live!方式専用。再生速度がこれよりも大きいときは負荷軽減のためデインタレース方式から'=1'を除去する
@@ -115,147 +132,121 @@ XCODE_OPTIONS={
     --ffmpegの例。-b:vでおおよその最大ビットレートを決め、-qminで動きの少ないシーンのデータ量を節約する
     name='432p/h264/ffmpeg',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 2400k -qmin 23 -maxrate 5M -bufsize 5M -preset veryfast $FILTER -s 768x432 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 2400k -qmin 23 -maxrate 5M -bufsize 5M -preset veryfast $FILTER -s 768x432 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k -map 0:d:i:304? -max_interleave_delta 500k $OUTPUT',
     poster='768x432,Loading...',
-    filter='-g 120 -vf yadif=0:-1:1',
-    filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
-    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
-    captionNone='-sn',
-    captionHls='-map 0:s? -scodec copy',
-    output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
-    outputHls={'m2t','-f mpegts -'},
+    filter=XCODE_OPTIONS.ffmpegYadifFunc,
+    filterCinema=XCODE_OPTIONS.ffmpegPullupFunc,
+    output=XCODE_OPTIONS.ffmpegMP4Output,
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
+  },
+  {
+    --焼きこみ字幕の例。libaribcaptionを有効にしたffmpegで利用可能
+    name='432p/h264/ffmpeg(hardsub)',
+    xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
+    option='-f mpegts -analyzeduration 1M -sub_type bitmap -canvas_size 768x432 -i - -map 0:v:0? -vcodec libx264 -flags:v +cgop -profile:v main -level 31 -b:v 2400k -qmin 23 -maxrate 5M -bufsize 5M -preset veryfast $FILTER -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k -max_interleave_delta 500k $OUTPUT',
+    poster='768x432,Loading...',
+    filter=function(rate) return '-g 120 -filter_complex "[0:v]yadif=0:-1:1,scale=768:432[deint];[deint][0:s]overlay'..(rate==1 and '"' or ',setpts=PTS/'..rate..'" -af atempo='..rate) end,
+    filterCinema=function(rate) return '-g 96 -filter_complex "[0:v]pullup,fps=24000/1001,scale=768:432[deint];[deint][0:s]overlay'..(rate==1 and '"' or ',setpts=PTS/'..rate..'" -af atempo='..rate) end,
+    passthroughCaption=true,
+    output=XCODE_OPTIONS.ffmpegMP4Output,
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
   },
   {
     name='720p/h264/ffmpeg-nvenc',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_nvenc -profile:v main -level 41 -b:v 3936k -qmin 23 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
-    filter='-g 120 -vf yadif=0:-1:1',
-    filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
-    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
-    captionNone='-sn',
-    captionHls='-map 0:s? -scodec copy',
-    output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
-    outputHls={'m2t','-f mpegts -'},
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_nvenc -profile:v main -level 41 -b:v 3936k -qmin 23 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k -map 0:d:i:304? -max_interleave_delta 500k $OUTPUT',
+    filter=XCODE_OPTIONS.ffmpegYadifFunc,
+    filterCinema=XCODE_OPTIONS.ffmpegPullupFunc,
+    output=XCODE_OPTIONS.ffmpegMP4Output,
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
   },
   {
     name='720p/h264/ffmpeg-qsv',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_qsv -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
-    filter='-g 120 -vf yadif=0:-1:1',
-    filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
-    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
-    captionNone='-sn',
-    captionHls='-map 0:s? -scodec copy',
-    output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
-    outputHls={'m2t','-f mpegts -'},
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_qsv -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset medium $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k -map 0:d:i:304? -max_interleave_delta 500k $OUTPUT',
+    filter=XCODE_OPTIONS.ffmpegYadifFunc,
+    filterCinema=XCODE_OPTIONS.ffmpegPullupFunc,
+    output=XCODE_OPTIONS.ffmpegMP4Output,
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
   },
   {
     name='720p/h264/ffmpeg-amf',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_amf -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset balanced $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
-    filter='-g 120 -vf yadif=0:-1:1',
-    filterCinema='-g 96 -vf pullup -r 24000/1001',
-    filterFastFunc=function(rate) return '-g 120 -vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
-    filterCinemaFastFunc=function(rate) return '-g 96 -vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -r 24000/1001' end,
-    captionNone='-sn',
-    captionHls='-map 0:s? -scodec copy',
-    output={'mp4','-f mp4 -movflags frag_keyframe+empty_moov -'},
-    outputHls={'m2t','-f mpegts -'},
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec h264_amf -profile:v main -level 41 -b:v 3936k -min_qp_i 23 -min_qp_p 26 -min_qp_b 30 -maxrate 8M -bufsize 8M -preset balanced $FILTER -s 1280x720 -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 160k -map 0:d:i:304? -max_interleave_delta 500k $OUTPUT',
+    filter=XCODE_OPTIONS.ffmpegYadifFunc,
+    filterCinema=XCODE_OPTIONS.ffmpegPullupFunc,
+    output=XCODE_OPTIONS.ffmpegMP4Output,
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
   },
   {
     name='360p/webm/ffmpeg',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libvpx -b:v 1888k -quality realtime -cpu-used 1 $FILTER -s 640x360 -map 0:a:$AUDIO -acodec libvorbis -ac 2 -b:a 160k $CAPTION -max_interleave_delta 500k $OUTPUT',
-    filter='-vf yadif=0:-1:1',
-    filterCinema='-vf pullup -r 24000/1001',
-    filterFastFunc=function(rate) return '-vf yadif=0:-1:1,setpts=PTS/'..rate..' -af atempo='..rate end,
-    filterCinemaFastFunc=function(rate) return '-vf pullup,setpts=PTS/'..rate..' -af atempo='..rate..' -r 24000/1001' end,
-    captionNone='-sn',
+    option='-f mpegts -analyzeduration 1M -i - -map 0:v:0? -vcodec libvpx -b:v 1888k -quality realtime -cpu-used 1 $FILTER -s 640x360 -map 0:a:$AUDIO -acodec libvorbis -ac 2 -b:a 160k -max_interleave_delta 500k $OUTPUT',
+    filter=function(rate) return '-vf yadif=0:-1:1'..(rate==1 and '' or ',setpts=PTS/'..rate..' -af atempo='..rate) end,
+    filterCinema=function(rate) return '-vf pullup'..(rate==1 and '' or ',setpts=PTS/'..rate..' -af atempo='..rate)..' -r 24000/1001' end,
     output={'webm','-f webm -'},
   },
   {
     --NVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/NVEncC',
     xcoder='NVEncC\\NVEncC64.exe|NVEncC\\NVEncC.exe|NVEncC64.exe|nvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset default $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default --data-copy -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
-    filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
-    filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
-    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
+    filter=XCODE_OPTIONS.hwenccVppDeintFunc,
+    filterCinema=XCODE_OPTIONS.hwenccVppDecimateFunc,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
-    captionNone='',
-    captionHls='--sub-copy',
-    output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
-    outputHls={'m2t','-f mpegts -o -'},
+    editorOptionFastFunc=XCODE_OPTIONS.ffmpegEditorFunc,
+    output=XCODE_OPTIONS.hwenccMP4Output,
+    outputHls=XCODE_OPTIONS.hwenccMpegtsOutput,
   },
   {
     --QSVEncCの例。倍速再生にはffmpegも必要
     name='720p/h264/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default --data-copy -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
-    filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
-    filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
-    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
+    filter=XCODE_OPTIONS.hwenccVppDeintFunc,
+    filterCinema=XCODE_OPTIONS.hwenccVppDecimateFunc,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
-    captionNone='',
-    captionHls='--sub-copy',
-    output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
-    outputHls={'m2t','-f mpegts -o -'},
+    editorOptionFastFunc=XCODE_OPTIONS.ffmpegEditorFunc,
+    output=XCODE_OPTIONS.hwenccMP4Output,
+    outputHls=XCODE_OPTIONS.hwenccMpegtsOutput,
   },
   {
     --QSVEncCの例。HEVC(未対応環境多め)。倍速再生にはffmpegも必要
     name='720p/hevc/QSVEncC',
     xcoder='QSVEncC\\QSVEncC64.exe|QSVEncC\\QSVEncC.exe|QSVEncC64.exe|qsvencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avhw --avsync forcecfr -c hevc --profile main --level 4.1 --qvbr 3936 --qvbr-quality 26 --fallback-rc --max-bitrate 8192 --vbv-bufsize 8192 $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default --data-copy -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
-    filter='--gop-len 120 --interlace tff --vpp-deinterlace normal',
-    filterCinema='--gop-len 96 --interlace tff --vpp-deinterlace normal --vpp-decimate',
-    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-deinterlace normal' end,
-    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-deinterlace normal --vpp-decimate' end,
+    filter=XCODE_OPTIONS.hwenccVppDeintFunc,
+    filterCinema=XCODE_OPTIONS.hwenccVppDecimateFunc,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
-    captionNone='',
-    captionHls='--sub-copy',
-    output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
-    outputHls={'m2t','-f mpegts -o -'},
+    editorOptionFastFunc=XCODE_OPTIONS.ffmpegEditorFunc,
+    output=XCODE_OPTIONS.hwenccMP4Output,
+    outputHls=XCODE_OPTIONS.hwenccMpegtsOutput,
   },
   {
     --VCEEncCの例。倍速再生にはffmpegも必要。あまり良い例ではない。ffmpegのh264_amfのほうが安定している雰囲気
     name='720p/h264/VCEEncC',
     xcoder='VCEEncC\\VCEEncC64.exe|VCEEncC\\VCEEncC.exe|VCEEncC64.exe|vceencc.exe',
-    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avsw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset balanced $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default $CAPTION -m max_interleave_delta:500k --lowlatency $OUTPUT',
+    option='--input-format mpegts --input-analyze 1 --input-probesize 4M -i - --avsw --avsync forcecfr --profile main --level 4.1 --vbr 3936 --qp-min 23:26:30 --max-bitrate 8192 --vbv-bufsize 8192 --preset balanced $FILTER --output-res 1280x720 --audio-stream $AUDIO?:stereo --audio-codec $AUDIO?aac --audio-bitrate $AUDIO?160 --audio-disposition $AUDIO?default --data-copy -m max_interleave_delta:500k --lowlatency $OUTPUT',
     audioStartAt=1,
-    filter='--gop-len 120 --interlace tff --vpp-afs preset=default',
-    filterCinema='--gop-len 96 --interlace tff --vpp-afs preset=cinema,24fps=true',
-    filterFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(120*rate)..' --interlace tff --vpp-afs preset=default' end,
-    filterCinemaFastFunc=function(rate) return '--fps '..math.floor(30000*rate+0.5)..'/1001 --gop-len '..math.floor(96*rate)..' --interlace tff --vpp-afs preset=cinema,24fps=true' end,
+    filter=function(rate) return (rate==1 and '' or '--fps '..math.floor(30000*rate+0.5)..'/1001 ')..'--gop-len '..math.floor(120*rate)..' --interlace tff --vpp-afs preset=default' end,
+    filterCinema=function(rate) return (rate==1 and '' or '--fps '..math.floor(30000*rate+0.5)..'/1001 ')..'--gop-len '..math.floor(96*rate)..' --interlace tff --vpp-afs preset=cinema,24fps=true' end,
     editorFast='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    editorOptionFastFunc=function(rate) return '-f mpegts -analyzeduration 1M -i - -bsf:v setts=ts=TS/'..rate..' -map 0:v:0? -vcodec copy -af atempo='..rate..' -bsf:s setts=ts=TS/'..rate..' -map 0:a -acodec ac3 -ac 2 -b:a 640k -map 0:s? -scodec copy -max_interleave_delta 300k -f mpegts -' end,
-    captionNone='',
-    captionHls='--sub-copy',
-    output={'mp4','-f mp4 --no-mp4opt -m movflags:frag_keyframe+empty_moov -o -'},
-    outputHls={'m2t','-f mpegts -o -'},
+    editorOptionFastFunc=XCODE_OPTIONS.ffmpegEditorFunc,
+    output=XCODE_OPTIONS.hwenccMP4Output,
+    outputHls=XCODE_OPTIONS.hwenccMpegtsOutput,
   },
   {
     --音声のみの例
     name='Audio-only/ffmpeg',
     xcoder='ffmpeg\\ffmpeg.exe|ffmpeg.exe',
-    option='-f mpegts -analyzeduration 1M -i - -vn $FILTER -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 96k $CAPTION -max_interleave_delta 500k $OUTPUT',
+    option='-f mpegts -analyzeduration 1M -i - -vn $FILTER -map 0:a:$AUDIO -acodec aac -ac 2 -b:a 96k -map 0:d:i:304? -max_interleave_delta 500k $OUTPUT',
     poster='1280x720,Audio-only',
-    filter='',
-    filterFastFunc=function(rate) return '-af atempo='..rate..' -bsf:s setts=ts=TS/'..rate end,
-    captionNone='-sn',
-    captionHls='-map 0:s? -scodec copy',
+    filter=function(rate) return (rate==1 and '' or '-af atempo='..rate..' -bsf:d setts=ts=TS/'..rate) end,
     output={'mp4','-f mp4 -movflags empty_moov -frag_duration 4M -'},
-    outputHls={'m2t','-f mpegts -'},
+    outputHls=XCODE_OPTIONS.ffmpegMpegtsOutput,
   },
   {
     --TS-Live!方式の例。そのまま転送。トランスコーダー不要(tsreadex.exeは必要)
@@ -265,8 +256,8 @@ XCODE_OPTIONS={
     deinterlace='bwdif',
     xcoder='',
     option='',
-    filter=':',
-    filterFastFunc=function() return ':' end,
+    filter=function() return ':' end,
+    passthroughCaption=true,
     output={'m2t',''},
   },
   {
@@ -277,8 +268,8 @@ XCODE_OPTIONS={
     maxRateForDoubling=1.0,
     xcoder='',
     option='',
-    filter=':',
-    filterFastFunc=function() return ':' end,
+    filter=function() return ':' end,
+    passthroughCaption=true,
     output={'m2t',''},
   },
 }
@@ -300,6 +291,12 @@ VIDEO_MUTED=false
 
 --音量の初期値。0～1、nilのとき未指定
 VIDEO_VOLUME=nil
+
+--Resume(続きから再生)のためにブラウザに再生位置を記憶しておく最大数。0で記憶しない
+VIDEO_RESUME_MAX=30
+
+--Resumeするとき再生位置をこの秒数だけ戻す
+VIDEO_RESUME_REWIND_SEC=3
 
 --字幕表示のオプション(JSON表記) https://github.com/monyone/aribb24.js#options
 ARIBB24_OPTION_JSON=[=[
@@ -362,11 +359,25 @@ JKRDLOG_PATH=nil
 --JKRDLOG_PATH='C:\\Path\\to\\jkrdlog.exe' --Windows
 --JKRDLOG_PATH='jkrdlog' --Windows以外
 
---実況コメントの文字の高さ(px)
-JK_COMMENT_HEIGHT=32
+--実況コメントのNGユーザーをブラウザに記憶しておく最大数。0でNG機能なし
+JK_NG_USERS_MAX=50
 
---実況コメントの表示時間(秒)
-JK_COMMENT_DURATION=5
+--実況コメントのオプションのリスト(JSON表記)。2つ以上のオプションは"scr"チェックボックスで切り替えできる
+JK_COMMENT_OPTIONS_JSON=[=[
+[
+{
+  "duration":4,
+  "heightPercent":6,
+  "maxHeightPx":9999,
+  "minHeightPx":24,
+  "opacity":1,
+  "paddingBottomPercent":2,
+  "paddingTopPercent":2,
+  "textStroke":"0.03em",
+  "unlimited":false
+}
+]
+]=]
 
 --実況ログ表示機能のデジタル放送のサービスIDと、実況の番号(jk?)
 --キーの下4桁の16進数にサービスID、上1桁にネットワークID(ただし地上波は15=0xF)を指定
@@ -446,11 +457,11 @@ function GetTranscodeQueries(qs)
     autoCinema=XCODE_OPTIONS[option or 1].autoCinema,
     deinterlace=(XCODE_OPTIONS[option or 1].deinterlace or ''):match('^[0-9A-Za-z=]+$'),
     maxRateForDoubling=tonumber(XCODE_OPTIONS[option or 1].maxRateForDoubling),
-    offset=GetVarInt(qs,'offset',-100000,100),
+    ofssec=GetVarInt(qs,'ofssec',0,100000),
     audio2=GetVarInt(qs,'audio2')==1,
     cinema=GetVarInt(qs,'cinema')==1,
     --0は明示的に等速を表す
-    fast=option and not XCODE_OPTIONS[option].filterFastFunc and 0 or GetVarInt(qs,'fast',0,#XCODE_FAST_RATES),
+    fast=option and type(XCODE_OPTIONS[option].filter)~='function' and 0 or GetVarInt(qs,'fast',0,#XCODE_FAST_RATES),
     reload=not not reload,
     loadKey=loadKey,
     caption=(GetVarInt(qs,'caption') or XCODE_CHECK_CAPTION and 1)==1,
@@ -460,7 +471,7 @@ end
 
 function ConstructTranscodeQueries(xq)
   return (xq.option and '&amp;option='..xq.option or '')
-    ..(xq.offset and '&amp;offset='..xq.offset or '')
+    ..(xq.ofssec and '&amp;ofssec='..xq.ofssec or '')
     ..(xq.audio2 and '&amp;audio2=1' or '')
     ..(xq.cinema and '&amp;cinema=1' or '')
     ..(xq.fast and '&amp;fast='..xq.fast or '')
@@ -470,8 +481,8 @@ end
 function VideoWrapperBegin()
   return '<div class="video-wrapper" id="vid-wrap">'
     ..'<div class="data-broadcasting-browser-container"><div class="data-broadcasting-browser-content"></div></div>'
-    ..'<div class="video-full-container arib-video-invisible-container" id="vid-full">'
-    ..'<div class="video-container arib-video-container arib-video-container-prepend arib-video-container-tunnel-pointer" id="vid-cont">'
+    ..'<div class="video-full-container" id="vid-full">'
+    ..'<div class="video-container" id="vid-cont">'
 end
 
 function VideoWrapperEnd(jkList,shiftable)
@@ -496,7 +507,7 @@ function VideoWrapperEnd(jkList,shiftable)
   return s
 end
 
-function TranscodeSettingTemplate(xq,forDL,fsec,chapters)
+function TranscodeSettingTemplate(xq,forDL,fsec,resumeHash,chapters)
   local s='<select name="option">'
   local esc=edcb.htmlEscape
   edcb.htmlEscape=15
@@ -508,22 +519,25 @@ function TranscodeSettingTemplate(xq,forDL,fsec,chapters)
   edcb.htmlEscape=esc
   s=s..'</select>\n'
   if fsec then
-    s=s..'<select name="offset">'
+    s=s..'<select name="ofssec"'..(resumeHash and ' data-resume-params="'..resumeHash..','..VIDEO_RESUME_MAX..','..VIDEO_RESUME_REWIND_SEC..'"'
+                                     ..(xq.ofssec and '' or ' data-prepend-resume="1"') or '')..'>'
+    local sel=false
     if fsec>0 and chapters then
       edcb.htmlEscape=15
-      local sel=nil
       for i,v in ipairs(chapters) do
         local sec=math.floor(v.pos/1000<fsec and v.pos/1000 or fsec)
         --便利のため1秒だけ引く
-        sel=sel or sec>1 and xq.offset==1-sec and i
+        sel=sel and 2 or sec>1 and (xq.ofssec or 0)==sec-1 and 1
         s=s..'<option'..(v.name:lower():find(CHAPTER_IN) and ' data-chapter-in="1"' or v.name:lower():find(CHAPTER_OUT) and ' data-chapter-out="1"' or '')
-          ..' value="'..math.min(1-sec,0)..'"'..Selected(sel==i)..' data-sec="'..sec..('">%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
+          ..' value="'..math.max(sec-1,0)..'"'..Selected(sel==1)..('>%dm%02ds '):format(math.floor(sec/60),sec%60)..EdcbHtmlEscape(v.name)
       end
       edcb.htmlEscape=esc
     end
     for i=0,100 do
-      s=s..'<option value="'..i..'"'..Selected((xq.offset or 0)==i)..(fsec>0 and ' data-sec="'..math.floor(fsec*i/100)..'"' or '')..'>'
-        ..(fsec>0 and ('%dm%02ds'):format(math.floor(fsec*i/100/60),fsec*i/100%60)..(i%5==0 and '|'..i..'%' or '') or i..'%')
+      sel=sel and 2 or (i==100 or (xq.ofssec or 0)<math.floor(fsec*(i+1)/100)) and 1
+      local sec=math.floor(fsec*i/100)
+      --100%は終端シーク
+      s=s..'<option value="'..(i==100 and 100000 or sec)..'"'..Selected(sel==1)..('>%dm%02ds'):format(math.floor(sec/60),sec%60)..(i%5==0 and '|'..i..'%' or '')
     end
     s=s..'</select>\n'
       ..'<select name="fast">'
@@ -555,7 +569,7 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
   local zip=NVRAM_ZIP:match('^'..('[0-9]'):rep(7)..'$')
   local prefecture=math.floor(math.max(NVRAM_REGION<=50 and NVRAM_REGION or 0,0))
   return [=[
-<script type="text/javascript" src="script.js?ver=20260902" defer></script>
+<script type="text/javascript" src="script.js?ver=20260918" defer></script>
 ]=]..(USE_DATACAST and [=[
 <div class="remote-control" style="display:none">
   <button
@@ -565,17 +579,18 @@ function PlaybackScriptTemplate(datacastLabel,live,jikkyo,caption,captionLabel)
     <button
       type="button" id="key]=]..table.concat({'6">1','7">2','8">3','9">4','10">5','11">6','12">7','13">8','14">9','15">10','16">11','17">12','5">0'},[=[</button><button
       type="button" id="key]=])..[=[</button></span>
-  <span class="remote-control-receiving-status" style="display:none">Loading...</span>
   <div class="remote-control-indicator"></div>
 </div>
 <label class="video-side-item"><input id="cb-datacast" type="checkbox"]=]
   ..(zip and ' data-absent-zip="'..zip..'"' or '')
   ..(prefecture~=0 and ' data-absent-prefecture="'..prefecture..'"' or '')
   ..(prefecture~=0 and ' data-absent-region="'..GetEwsRegionCode(prefecture)..'"' or '')..'>'..datacastLabel..[=[</label>
-<script type="text/javascript" src="web_bml_play_ts.js" defer></script>
+<script type="text/javascript" src="web_bml.js" defer></script>
 ]=] or '')..((live and USE_LIVEJK or not live and JKRDLOG_PATH) and [=[
 <label class="video-side-item"><input id="cb-jikkyo"]=]..Checkbox(jikkyo)
-  ..' data-comment-height="'..JK_COMMENT_HEIGHT..'" data-comment-duration="'..JK_COMMENT_DURATION..'" data-custom-replace-json="'..mg.url_encode(JK_CUSTOM_REPLACE_JSON)..[=[">jikkyo</label>
+  ..' data-ng-users-max="'..JK_NG_USERS_MAX
+  ..'" data-comment-options-json="'..mg.url_encode(JK_COMMENT_OPTIONS_JSON)
+  ..'" data-custom-replace-json="'..mg.url_encode(JK_CUSTOM_REPLACE_JSON)..[=[">jikkyo</label>
 <label class="video-side-item enabled-on-checked"><input id="cb-jikkyo-onscr" type="checkbox" checked>scr</label>
 <script type="text/javascript" src="danmaku.js" defer></script>
 ]=] or '')..[=[
@@ -608,8 +623,7 @@ end
 function TranscodeScriptTemplate(live,xq,params)
   return PlaybackScriptTemplate('data',live,xq.jikkyo,xq.caption,'CC')..(live and '<label class="video-side-item"><input id="cb-live" type="checkbox"'
     ..(USE_LIVEJK and ' data-post-comment-query="ctok='..CsrfToken('comment.lua')..'&amp;n='..params.n..(params.id and '&amp;id='..params.id or '')..'"' or '')..'>live</label>\n' or '')..[=[
-<span id="vid-seek" data-initial-ofssec="]=]..math.floor((live or not xq.offset) and 0 or xq.offset<0 and -xq.offset or params.fsec*xq.offset/100)
-  ..'" data-initial-fast="'..(xq.fast and xq.fast~=0 and XCODE_FAST_RATES[xq.fast] or 1)..[=[">
+<span id="vid-seek">
 <span id="vid-seek-popup">]=]..(not live and THUMBNAIL_ON_SEEK and [=[
 <canvas style="display:none"></canvas><script type="text/javascript" src="ts-live.lua?t=-misc.js" defer></script>]=] or '')..[=[
 <div id="vid-seek-status" style="display:none"></div><input type="range" step="0.1" style="display:none" list="vid-seek-marker"></span>
@@ -1675,8 +1689,8 @@ function DefaultHeadContents()
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: data:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'">
 <meta name="viewport" content="initial-scale=1">
-<script type="text/javascript" src="common.js?ver=20260824" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
-<link rel="stylesheet" type="text/css" href="default.css">
+<script type="text/javascript" src="common.js?ver=20260918" id="common-js" data-script-name="]=]..mg.script_name:match('[0-9A-Za-z._-]*$'):lower()..[=[" defer></script>
+<link rel="stylesheet" type="text/css" href="default.css?ver=20260918">
 ]=]..(COLOR_SCHEME~='dark' and COLOR_SCHEME~='light' and '' or
   '<style type="text/css">:root{color-scheme:'..(COLOR_SCHEME=='dark' and 'dark;--light: ;--dark' or 'light;--dark: ;--light')..':initial}</style>\n')
 end
